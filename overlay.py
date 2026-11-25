@@ -115,13 +115,26 @@ def draw_menu(img, names: list[str], selected: int, anchor: int, at: tuple[float
     Item `anchor` sits level with `at`, where the hold started; the others are
     one `step_px` apart, the distance the hand moves per item.
     """
-    x, y = _to_view(*at, img.shape[1], mirror)
-    x += 60
-    for i, name in enumerate(names):
-        item_y = int(y + (i - anchor) * step_px)
-        if not 0 < item_y < img.shape[0]:
-            continue
+    height, width = img.shape[:2]
+    hand_x, y = _to_view(*at, width, mirror)
+    scale, pad = 0.7, 14
+    text_w = max(cv2.getTextSize(name, FONT, scale, 2)[0][0] for name in names)
+    box_w = text_w + 2 * pad
+    left = hand_x + 60 if hand_x + 60 + box_w <= width else hand_x - 60 - box_w  # keep it on screen
+    rows = [int(y + (i - anchor) * step_px) for i in range(len(names))]
+    top, bottom = rows[0] - int(step_px / 2), rows[-1] + int(step_px / 2)
+
+    y0, y1, x0, x1 = max(top, 0), min(bottom, height), max(left, 0), min(left + box_w, width)
+    if y0 >= y1 or x0 >= x1:
+        return
+    img[y0:y1, x0:x1] = (img[y0:y1, x0:x1] * 0.25).astype(img.dtype)  # dark, see-through panel
+    cv2.rectangle(img, (left, top), (left + box_w, bottom), GREY, 1, cv2.LINE_AA)
+
+    for i, (name, row) in enumerate(zip(names, rows)):
         if i == selected:
-            _label(img, f"> {name}", (x, item_y + 8), GREEN, scale=0.9)
+            cv2.rectangle(img, (left + 3, row - int(step_px / 2) + 3), (left + box_w - 3, row + int(step_px / 2) - 3),
+                          GREEN, -1)
+            colour = (0, 0, 0)
         else:
-            _label(img, name, (x + 20, item_y + 6), GREY, scale=0.6)
+            colour = (230, 230, 230)
+        cv2.putText(img, name, (left + pad, row + 8), FONT, scale, colour, 2 if i == selected else 1, cv2.LINE_AA)
