@@ -18,7 +18,13 @@ uv run frame_fx.py
 `frame_fx.py` controls:
 
 - Right-hand pinch: next effect. Left-hand pinch: picture outside the frame black, or back.
-- Keys: `n` next effect, `b` black outside, `q` quit.
+- Keys: `n` next effect, `b` black outside, `h` hide or show help, `q` quit.
+
+A pinch is the thumb and index tips closer than 3.5 cm, measured in real-world
+centimetres, so it works near the camera and far from it. Open them past 5.5 cm
+before the next pinch counts. Your own window shows each tracked hand, a gauge
+that fills as you pinch ("pinch 1.5 cm more") and a hint for what to do next.
+The virtual camera gets the picture without this help.
 
 The first run asks for camera access for your terminal app.
 

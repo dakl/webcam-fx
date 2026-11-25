@@ -3,7 +3,9 @@
 Make a rectangle with the thumbs and index fingers of both hands. The image
 inside it gets an effect. A pinch with the right hand switches to the next
 effect; a pinch with the left hand turns the picture outside the frame black
-or back. Keys: n next effect, b black outside, q quit.
+or back. Keys: n next effect, b black outside, h hide or show help, q quit.
+Your own window shows the tracked hands and a gauge for each pinch; the
+virtual camera gets the picture without them.
 Pass a number of seconds to stop on its own and print fps.
 With --cam, the picture also goes to the OBS Virtual Camera, not mirrored,
 for use in meetings. The local window stays mirrored and shows the status line.
@@ -17,12 +19,16 @@ import mediapipe as mp
 import numpy as np
 import pyvirtualcam
 from camera import DEFAULT_CAMERA, open_camera
+from gestures import INDEX_TIP, THUMB_TIP, PinchState, pinch_gap_cm
 from mediapipe.tasks.python import BaseOptions, vision
+from overlay import Flash, HandDrawing, draw_flash, draw_hand, draw_hint, hint_for
 
-THUMB_TIP, INDEX_TIP = 4, 8
 MIN_SIDE_PX = 40
-PINCH_PX = 25
 SMOOTHING = 0.7
+FREEZE_BELOW_CM = 7.0  # the frame holds still while a hand's thumb and index are this close
+BOX_HOLD_S = 0.3  # keep the frame this long when tracking drops a hand for a moment
+EFFECTS_COLOUR = (255, 200, 0)  # BGR, light blue
+BLACK_COLOUR = (220, 80, 255)  # BGR, pink
 
 
 def pixelate(c):
@@ -147,9 +153,10 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
         print(f"Sending to {cam.device}")
 
     fx, box, black_outside = 0, None, False
-    pinched = {"Left": False, "Right": False}
+    pinches = {"Left": PinchState(), "Right": PinchState()}
     # MediaPipe names hands as if the picture is mirrored; --cam sends it unmirrored, so swap.
     effects_hand = "Left" if to_cam else "Right"
+    show_help, flash, box_seen = True, None, 0.0
     t0 = time.time()
     frames, two_hand_frames, fps = 0, 0, 0.0
     last_tick = t0
@@ -163,29 +170,51 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
         H, W = frame.shape[:2]
         rgb = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         res = landmarker.detect_for_video(rgb, int((time.time() - t0) * 1000))
+        now = time.time()
+
+        drawings, closing = [], False
+        seen_sides = set()
+        for hand, world, handedness in zip(res.hand_landmarks, res.hand_world_landmarks, res.handedness):
+            side = handedness[0].category_name
+            seen_sides.add(side)
+            gap = pinch_gap_cm(world)
+            closing |= gap < FREEZE_BELOW_CM
+            is_effects = side == effects_hand
+            if pinches[side].update(gap):
+                if is_effects:
+                    fx = (fx + 1) % len(FX)
+                else:
+                    black_outside = not black_outside
+                tip = hand[INDEX_TIP]
+                flash = Flash(FX[fx][0] if is_effects else f"black {'on' if black_outside else 'off'}",
+                              (tip.x * W, tip.y * H), now)
+            drawings.append(HandDrawing(
+                points=np.array([(p.x * W, p.y * H) for p in hand]),
+                colour=EFFECTS_COLOUR if is_effects else BLACK_COLOUR,
+                action="next effect" if is_effects else "black outside",
+                gap_cm=gap,
+                pinched=pinches[side].closed,
+            ))
+        for side in pinches.keys() - seen_sides:
+            pinches[side].hand_lost()
+
         if len(res.hand_landmarks) == 2:
             two_hand_frames += 1
-            pts = np.array(
-                [(p.x * W, p.y * H) for hand in res.hand_landmarks for p in (hand[THUMB_TIP], hand[INDEX_TIP])]
-            )
-            new = np.array([*pts.min(0), *pts.max(0)])
-            box = new if box is None else SMOOTHING * box + (1 - SMOOTHING) * new
-            for hand, handedness in zip(res.hand_landmarks, res.handedness):
-                side = handedness[0].category_name
-                a, b = hand[THUMB_TIP], hand[INDEX_TIP]
-                is_pinch = np.hypot((a.x - b.x) * W, (a.y - b.y) * H) < PINCH_PX
-                if is_pinch and not pinched.get(side, False):
-                    if side == effects_hand:
-                        fx = (fx + 1) % len(FX)
-                    else:
-                        black_outside = not black_outside
-                pinched[side] = is_pinch
-        else:
+            box_seen = now
+            if not (closing and box is not None):  # hold the frame still during a pinch
+                pts = np.array(
+                    [(p.x * W, p.y * H) for hand in res.hand_landmarks for p in (hand[THUMB_TIP], hand[INDEX_TIP])]
+                )
+                new = np.array([*pts.min(0), *pts.max(0)])
+                box = new if box is None else SMOOTHING * box + (1 - SMOOTHING) * new
+        elif now - box_seen > BOX_HOLD_S:
             box = None
 
+        frame_ok = False
         if box is not None:
             x0, y0, x1, y1 = np.clip(box, 0, [W, H, W, H]).astype(int)
             if x1 - x0 > MIN_SIDE_PX and y1 - y0 > MIN_SIDE_PX:
+                frame_ok = True
                 inside = FX[fx][1](frame[y0:y1, x0:x1].copy())
                 if black_outside:
                     frame[:] = 0
@@ -196,12 +225,16 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
             cam.send(frame)
 
         frames += 1
-        now = time.time()
         fps = 0.9 * fps + 0.1 * (1 / max(now - last_tick, 1e-6))
         last_tick = now
         status = f"{fps:4.1f} fps  hands: {len(res.hand_landmarks)}  {FX[fx][0]}{'  black' if black_outside else ''}"
         if cam:
             frame = cv2.flip(frame, 1)  # your own window is mirrored, like a meeting app's preview
+        if show_help:
+            for drawing in drawings:
+                draw_hand(frame, drawing, mirror=bool(cam))
+            draw_flash(frame, flash, mirror=bool(cam))
+            draw_hint(frame, hint_for(len(res.hand_landmarks), frame_ok))
         cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
         cv2.imshow("frame fx", frame)
@@ -212,6 +245,8 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
             fx = (fx + 1) % len(FX)
         if key == ord("b"):
             black_outside = not black_outside
+        if key == ord("h"):
+            show_help = not show_help
         if run_seconds is not None and now - t0 > run_seconds:
             break
 
