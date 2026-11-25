@@ -2,8 +2,9 @@
 
 Make a rectangle with the thumbs and index fingers of both hands. The image
 inside it gets an effect. A pinch with the right hand switches to the next
-effect; a pinch with the left hand turns the picture outside the frame black
-or back. Keys: n next effect, b black outside, h hide or show help, q quit.
+effect; pinch and hold to open a list of effects, move the hand down or up to
+pick one, and let go to keep it. A pinch with the left hand turns the picture
+outside the frame black or back. Keys: n next effect, b black outside, h hide or show help, q quit.
 Your own window shows the tracked hands and a gauge for each pinch; the
 virtual camera gets the picture without them.
 Pass a number of seconds to stop on its own and print fps.
@@ -19,9 +20,9 @@ import mediapipe as mp
 import numpy as np
 import pyvirtualcam
 from camera import DEFAULT_CAMERA, open_camera
-from gestures import INDEX_TIP, THUMB_TIP, PinchState, pinch_gap_cm
+from gestures import INDEX_TIP, MENU_STEP, THUMB_TIP, PinchMenu, PinchState, pinch_gap_cm
 from mediapipe.tasks.python import BaseOptions, vision
-from overlay import Flash, HandDrawing, draw_flash, draw_hand, draw_hint, hint_for
+from overlay import Flash, HandDrawing, draw_flash, draw_hand, draw_hint, draw_menu, hint_for
 
 MIN_SIDE_PX = 40
 SMOOTHING = 0.7
@@ -138,7 +139,7 @@ FX = [
 ]
 
 
-def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
+def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: str | None = None) -> None:
     landmarker = vision.HandLandmarker.create_from_options(
         vision.HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path="hand_landmarker.task"),
@@ -152,7 +153,10 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
     if cam:
         print(f"Sending to {cam.device}")
 
-    fx, box, black_outside = 0, None, False
+    log = open(log_path, "w", encoding="utf-8") if log_path else None
+    if log:
+        log.write("t,side,side_score,gap_cm,triggered,hands\n")
+    menu, box, black_outside, menu_at = PinchMenu(count=len(FX)), None, False, (0.0, 0.0)
     pinches = {"Left": PinchState(), "Right": PinchState()}
     # MediaPipe names hands as if the picture is mirrored; --cam sends it unmirrored, so swap.
     effects_hand = "Left" if to_cam else "Right"
@@ -174,26 +178,36 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
 
         drawings, closing = [], False
         seen_sides = set()
+        if log and not res.hand_landmarks:
+            log.write(f"{now - t0:.3f},none,,,,0\n")
         for hand, world, handedness in zip(res.hand_landmarks, res.hand_world_landmarks, res.handedness):
             side = handedness[0].category_name
             seen_sides.add(side)
             gap = pinch_gap_cm(world)
             closing |= gap < FREEZE_BELOW_CM
             is_effects = side == effects_hand
-            if pinches[side].update(gap):
-                if is_effects:
-                    fx = (fx + 1) % len(FX)
-                else:
-                    black_outside = not black_outside
-                tip = hand[INDEX_TIP]
-                flash = Flash(FX[fx][0] if is_effects else f"black {'on' if black_outside else 'off'}",
-                              (tip.x * W, tip.y * H), now)
+            triggered = pinches[side].update(gap)
+            pinch_x = (hand[THUMB_TIP].x + hand[INDEX_TIP].x) / 2
+            pinch_y = (hand[THUMB_TIP].y + hand[INDEX_TIP].y) / 2
+            if log:
+                log.write(f"{now - t0:.3f},{side},{handedness[0].score:.2f},{gap:.2f},{int(triggered)},{len(res.hand_landmarks)}\n")
+            if is_effects:
+                event = menu.update(pinches[side].closed, pinch_y, now)
+                if menu.is_open:
+                    menu_at = (pinch_x * W, menu.start_y * H)
+                if event:
+                    flash = Flash(FX[menu.selected][0], (pinch_x * W, pinch_y * H), now)
+            elif triggered:
+                black_outside = not black_outside
+                flash = Flash(f"black {'on' if black_outside else 'off'}", (pinch_x * W, pinch_y * H), now)
             drawings.append(HandDrawing(
                 points=np.array([(p.x * W, p.y * H) for p in hand]),
                 colour=EFFECTS_COLOUR if is_effects else BLACK_COLOUR,
                 action="next effect" if is_effects else "black outside",
                 gap_cm=gap,
                 pinched=pinches[side].closed,
+                pinched_text=("" if menu.is_open else "let go: next, hold: list")
+                if is_effects else "black outside - open to pinch again",
             ))
         for side in pinches.keys() - seen_sides:
             pinches[side].hand_lost()
@@ -215,7 +229,7 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
             x0, y0, x1, y1 = np.clip(box, 0, [W, H, W, H]).astype(int)
             if x1 - x0 > MIN_SIDE_PX and y1 - y0 > MIN_SIDE_PX:
                 frame_ok = True
-                inside = FX[fx][1](frame[y0:y1, x0:x1].copy())
+                inside = FX[menu.selected][1](frame[y0:y1, x0:x1].copy())
                 if black_outside:
                     frame[:] = 0
                 frame[y0:y1, x0:x1] = inside
@@ -227,14 +241,19 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
         frames += 1
         fps = 0.9 * fps + 0.1 * (1 / max(now - last_tick, 1e-6))
         last_tick = now
-        status = f"{fps:4.1f} fps  hands: {len(res.hand_landmarks)}  {FX[fx][0]}{'  black' if black_outside else ''}"
+        status = f"{fps:4.1f} fps  hands: {len(res.hand_landmarks)}  {FX[menu.selected][0]}{'  black' if black_outside else ''}"
         if cam:
             frame = cv2.flip(frame, 1)  # your own window is mirrored, like a meeting app's preview
         if show_help:
             for drawing in drawings:
                 draw_hand(frame, drawing, mirror=bool(cam))
             draw_flash(frame, flash, mirror=bool(cam))
-            draw_hint(frame, hint_for(len(res.hand_landmarks), frame_ok))
+            if menu.is_open:
+                draw_menu(frame, [name for name, _ in FX], menu.selected, menu.start_index, menu_at,
+                          MENU_STEP * H, mirror=bool(cam))
+            hint = "Move the pinch down or up to pick, open your fingers to keep it" if menu.is_open \
+                else hint_for(len(res.hand_landmarks), frame_ok)
+            draw_hint(frame, hint)
         cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
         cv2.imshow("frame fx", frame)
@@ -242,7 +261,7 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
         if key == ord("q"):
             break
         if key == ord("n"):
-            fx = (fx + 1) % len(FX)
+            menu.selected = (menu.selected + 1) % len(FX)
         if key == ord("b"):
             black_outside = not black_outside
         if key == ord("h"):
@@ -253,6 +272,9 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str) -> None:
     elapsed = time.time() - t0
     print(f"{frames} frames in {elapsed:.1f} s = {frames / elapsed:.1f} fps; two hands seen in {two_hand_frames} frames")
     cap.release()
+    if log:
+        log.close()
+        print(f"Pinch log: {log_path}")
     if cam:
         cam.close()
     cv2.destroyAllWindows()
@@ -263,5 +285,6 @@ if __name__ == "__main__":
     parser.add_argument("seconds", nargs="?", type=float, help="stop after this many seconds")
     parser.add_argument("--cam", action="store_true", help="also send to the OBS Virtual Camera")
     parser.add_argument("--camera", default=DEFAULT_CAMERA, help="part of the input camera name")
+    parser.add_argument("--log", metavar="CSV", help="write each frame's pinch gap per hand to this file")
     args = parser.parse_args()
-    main(args.seconds, args.cam, args.camera)
+    main(args.seconds, args.cam, args.camera, args.log)

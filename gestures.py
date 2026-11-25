@@ -48,3 +48,46 @@ class PinchState:
     def hand_lost(self) -> None:
         """Forget a pinch in progress; a pinch held while out of view stays closed."""
         self.frames_under = 0
+
+
+HOLD_S = 0.4  # a pinch held this long opens the list instead of meaning "next"
+MENU_STEP = 0.06  # moving the pinch this fraction of the picture height moves one item
+
+
+@dataclass
+class PinchMenu:
+    """Choose from `count` items with one hand.
+
+    A quick pinch moves to the next item. A pinch held for HOLD_S opens a list:
+    moving the pinched hand down or up moves the selection, and opening the
+    fingers keeps it.
+    """
+
+    count: int
+    selected: int = 0
+    is_open: bool = False
+    started_at: float | None = None
+    start_y: float = 0.0
+    start_index: int = 0
+
+    def update(self, pinched: bool, y: float, now: float) -> str | None:
+        """Feed one frame: is the hand pinched, the pinch's height (0 top, 1 bottom), the time.
+
+        Returns "next" after a quick pinch, "chosen" when the list closes, else None.
+        """
+        if pinched:
+            if self.started_at is None:
+                self.started_at, self.start_y, self.start_index = now, y, self.selected
+            if not self.is_open and now - self.started_at >= HOLD_S:
+                self.is_open = True
+            if self.is_open:
+                steps = round((y - self.start_y) / MENU_STEP)
+                self.selected = min(max(self.start_index + steps, 0), self.count - 1)
+            return None
+        if self.started_at is None:
+            return None
+        event = "chosen" if self.is_open else "next"
+        if event == "next":
+            self.selected = (self.selected + 1) % self.count
+        self.is_open, self.started_at = False, None
+        return event

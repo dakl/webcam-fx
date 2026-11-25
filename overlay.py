@@ -28,6 +28,7 @@ class HandDrawing:
     action: str  # what this hand's pinch does
     gap_cm: float
     pinched: bool
+    pinched_text: str  # shown while the pinch is held
 
 
 @dataclass(frozen=True)
@@ -69,11 +70,12 @@ def draw_hand(img, hand: HandDrawing, mirror: bool) -> None:
         cv2.ellipse(img, centre, (18, 18), -90, 0, 360 * progress, gauge_colour, 4, cv2.LINE_AA)
 
     if hand.pinched:
-        text = f"{hand.action}  - open to pinch again"
+        text = hand.pinched_text
     else:
         to_go = max(hand.gap_cm - PINCH_ON_CM, 0)
         text = f"{hand.action}: pinch {to_go:.1f} cm more"
-    _label(img, text, (centre[0] + 26, centre[1] + 6), gauge_colour)
+    if text:
+        _label(img, text, (centre[0] + 26, centre[1] + 6), gauge_colour)
 
 
 def draw_flash(img, flash: Flash | None, mirror: bool) -> None:
@@ -103,4 +105,23 @@ def hint_for(hands_seen: int, frame_ok: bool) -> str:
         return "Show your other hand too, to make a frame"
     if not frame_ok:
         return "Spread thumbs and index fingers to make a bigger frame"
-    return "Pinch: right hand = next effect, left hand = black outside   (h hides help)"
+    return "Right pinch: next effect (hold: list)   Left pinch: black outside   (h hides help)"
+
+
+def draw_menu(img, names: list[str], selected: int, anchor: int, at: tuple[float, float], step_px: float,
+              mirror: bool) -> None:
+    """The effect list beside the pinch: it stays put, and the highlight follows the hand.
+
+    Item `anchor` sits level with `at`, where the hold started; the others are
+    one `step_px` apart, the distance the hand moves per item.
+    """
+    x, y = _to_view(*at, img.shape[1], mirror)
+    x += 60
+    for i, name in enumerate(names):
+        item_y = int(y + (i - anchor) * step_px)
+        if not 0 < item_y < img.shape[0]:
+            continue
+        if i == selected:
+            _label(img, f"> {name}", (x, item_y + 8), GREEN, scale=0.9)
+        else:
+            _label(img, name, (x + 20, item_y + 6), GREY, scale=0.6)

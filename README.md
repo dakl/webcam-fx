@@ -17,7 +17,11 @@ uv run frame_fx.py
 
 `frame_fx.py` controls:
 
-- Right-hand pinch: next effect. Left-hand pinch: picture outside the frame black, or back.
+- Right-hand pinch: next effect, when you let go. Pinch and hold for 0.4 s to
+  open a list of effects; move the pinch down or up to pick, and open your
+  fingers to keep it.
+- Left-hand pinch: picture outside the frame black, or back.
+- `--log pinches.csv` writes each frame's finger gap per hand, to tune the pinch limits.
 - Keys: `n` next effect, `b` black outside, `h` hide or show help, `q` quit.
 
 A pinch is the thumb and index tips closer than 3.5 cm, measured in real-world
