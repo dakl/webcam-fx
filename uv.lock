@@ -847,6 +847,7 @@ dependencies = [
     { name = "mediapipe" },
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "pillow" },
     { name = "pyobjc-framework-quartz" },
     { name = "pyvirtualcam" },
 ]
@@ -861,6 +862,7 @@ requires-dist = [
     { name = "mediapipe", specifier = ">=1.2.3" },
     { name = "numpy", specifier = ">=2.5.5" },
     { name = "opencv-python", specifier = ">=5.1.0.95" },
+    { name = "pillow", specifier = ">=13.0.0" },
     { name = "pyobjc-framework-quartz", specifier = ">=13.0" },
     { name = "pyvirtualcam", specifier = ">=0.15.0" },
 ]

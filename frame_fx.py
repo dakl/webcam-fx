@@ -22,7 +22,7 @@ import pyvirtualcam
 from camera import DEFAULT_CAMERA, open_camera
 from gestures import INDEX_TIP, MENU_STEP, THUMB_TIP, PinchMenu, PinchState, pinch_gap_cm
 from mediapipe.tasks.python import BaseOptions, vision
-from overlay import Flash, HandDrawing, draw_flash, draw_hand, draw_hint, draw_menu, hint_for
+from overlay import Flash, HandDrawing, draw_flash, draw_hand, draw_hint, draw_menu, draw_status, hint_for
 
 MIN_SIDE_PX = 40
 SMOOTHING = 0.7
@@ -254,7 +254,7 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: st
             hint = "Move the pinch down or up to pick, open your fingers to keep it" if menu.is_open \
                 else hint_for(len(res.hand_landmarks), frame_ok)
             draw_hint(frame, hint)
-        cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        draw_status(frame, status)
 
         cv2.imshow("frame fx", frame)
         key = cv2.waitKey(1) & 0xFF
