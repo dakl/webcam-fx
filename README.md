@@ -50,6 +50,23 @@ OBS Virtual Camera. Pick **OBS Virtual Camera** in Slack, Teams or Zoom.
 gesture with modifier keys to zoom" on with Control, and Accessibility
 permission for your terminal app.
 
+## Swift app (`mac/`)
+
+A native start on the same hand tracking, without Python: MediaPipe's two
+hand models, converted to ONNX, run through ONNX Runtime (the landmark model
+on Core ML). It shows each tracked hand and the thumb–index gap in cm. It has
+no effects and no virtual camera yet.
+
+```bash
+brew install onnxruntime
+cd mac && swift run -c release HandFX
+```
+
+- `s` in the window saves the camera picture to `mac/captures/`.
+- `HandFX --check a.png` prints the hands found in a picture as JSON.
+- The pinch gap leaves out depth: the model guesses it poorly, and a closed
+  pinch facing the camera can read 3–6 cm apart in depth.
+
 ## Camera choice
 
 The scripts open the camera by name (default "MacBook Pro Camera"), because
