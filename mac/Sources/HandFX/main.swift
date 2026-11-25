@@ -3,18 +3,31 @@ import AVFoundation
 import CoreImage
 import HandTracking
 
-// HandFX: the camera picture with each tracked hand drawn on it, and the thumb–index gap in cm.
+// HandFX: make a rectangle with the thumbs and index fingers of both hands; the picture inside
+// gets an effect. The blue hand's pinch switches to the next effect; pinch and hold it to open
+// the effect list, move down or up to pick, and open the fingers to keep it. The pink hand's
+// pinch turns the picture outside the frame black, or back.
 //
-//   swift run -c release HandFX                       window, MacBook Pro Camera
-//   swift run -c release HandFX --camera iPhone       another camera, by part of its name
-//   swift run -c release HandFX --cpu                 ONNX Runtime on the CPU instead of Core ML
-//   swift run -c release HandFX --check a.jpg b.jpg   print the hands found in pictures, as JSON lines
+//   swift run -c release HandFX                          window, MacBook Pro Camera
+//   swift run -c release HandFX --camera iPhone          another camera, by part of its name
+//   swift run -c release HandFX --cpu                    ONNX Runtime on the CPU instead of Core ML
+//   swift run -c release HandFX --check a.png b.png      print the hands found in pictures, as JSON lines
+//   swift run -c release HandFX --effects a.png out/     render every effect on a picture, for a look
 //
-// In the window, press s to save the camera picture to mac/captures/.
+// Keys in the window: n next effect, b black outside, h hide or show help, s save the camera
+// picture to mac/captures/, q quit.
 
 let args = CommandLine.arguments
 func option(_ name: String) -> String? {
     args.firstIndex(of: name).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+}
+
+let ciContext = CIContext()
+let effects = Effects(context: ciContext)
+
+if let i = args.firstIndex(of: "--effects"), i + 2 < args.count {
+    renderEffects(picture: args[i + 1], into: args[i + 2])
+    exit(0)
 }
 
 let tracker: HandTracker
@@ -30,7 +43,7 @@ if let first = args.firstIndex(of: "--check") {
     exit(0)
 }
 
-// MARK: - Picture check
+// MARK: - Picture checks
 
 /// Print `{"file", "hands": [{"right", "presence", "landmarks", "world"}]}` for one picture.
 func checkPicture(_ path: String) {
@@ -57,96 +70,41 @@ func checkPicture(_ path: String) {
     print(String(data: data, encoding: .utf8)!)
 }
 
-// MARK: - Live window
-
-final class FrameView: NSView {
-    var image: CGImage?
-    var hands: [Hand] = []
-    var pinched: [Bool] = []
-    var fps: Double = 0
-
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
-
-    /// `s` saves the camera picture (without drawings) to mac/captures/, for `--check`.
-    override func keyDown(with event: NSEvent) {
-        guard event.charactersIgnoringModifiers == "s", let image else { return super.keyDown(with: event) }
-        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../captures").standardized
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let name = "frame-\(Int(Date().timeIntervalSince1970 * 1000)).png"
-        let rep = NSBitmapImageRep(cgImage: image)
-        try? rep.representation(using: .png, properties: [:])?.write(to: folder.appendingPathComponent(name))
-        print("saved captures/\(name)")
+/// Write `<effect>.png` for each effect, applied to the middle half of the picture.
+func renderEffects(picture: String, into folder: String) {
+    guard let image = CIImage(contentsOf: URL(fileURLWithPath: picture)) else { return print("cannot read \(picture)") }
+    let e = image.extent
+    let box = SIMD4(Float(e.width * 0.25), Float(e.height * 0.25), Float(e.width * 0.75), Float(e.height * 0.75))
+    try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+    for (name, apply) in effects.all {
+        let out = compose(image, frame: box, effect: apply, blackOutside: name == "ascii", time: 3)
+        let url = URL(fileURLWithPath: folder).appendingPathComponent("\(name).png")
+        try! ciContext.writePNGRepresentation(of: out, to: url, format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
+        print("wrote \(url.path)")
     }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        NSColor.black.setFill()
-        bounds.fill()
-        guard let image else { return }
-        let scale = min(bounds.width / CGFloat(image.width), bounds.height / CGFloat(image.height))
-        let size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
-        let origin = CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2)
-        // Mirrored, like a meeting app's own preview.
-        func view(_ p: SIMD3<Float>) -> CGPoint {
-            CGPoint(x: origin.x + size.width - CGFloat(p.x) * scale, y: origin.y + CGFloat(p.y) * scale)
-        }
-        ctx.saveGState()
-        ctx.translateBy(x: origin.x + size.width, y: origin.y + size.height)
-        ctx.scaleBy(x: -1, y: -1)  // in this flipped view: upright and mirrored
-        ctx.draw(image, in: CGRect(origin: .zero, size: size))
-        ctx.restoreGState()
-
-        for (i, hand) in hands.enumerated() {
-            let colour = hand.isRight ? NSColor.systemTeal : NSColor.systemPink
-            let pts = hand.landmarks.map(view)
-            let path = NSBezierPath()
-            for (a, b) in Self.bones {
-                path.move(to: pts[a]); path.line(to: pts[b])
-            }
-            colour.setStroke(); path.lineWidth = 3; path.stroke()
-            for p in pts {
-                let dot = NSBezierPath(ovalIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
-                NSColor.white.setFill(); dot.fill()
-            }
-            let gap = Pinch.gapCm(hand)
-            let isPinched = i < pinched.count && pinched[i]
-            let gapLine = NSBezierPath()
-            gapLine.move(to: pts[4]); gapLine.line(to: pts[8])
-            (isPinched ? NSColor.systemGreen : NSColor.systemGray).setStroke()
-            gapLine.lineWidth = isPinched ? 8 : 3; gapLine.stroke()
-            let label = String(format: "%@  %.1f cm%@", hand.isRight ? "R" : "L", gap, isPinched ? "  pinch" : "")
-            pill(label, at: CGPoint(x: (pts[4].x + pts[8].x) / 2 + 30, y: (pts[4].y + pts[8].y) / 2),
-                 colour: isPinched ? .systemGreen : .white)
-        }
-        pill(String(format: "%.0f fps · %d hands", fps, hands.count), at: CGPoint(x: 16, y: 24), colour: .lightGray)
-    }
-
-    private func pill(_ text: String, at p: CGPoint, colour: NSColor) {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont(name: "Marker Felt Wide", size: 22) ?? .boldSystemFont(ofSize: 22), .foregroundColor: colour,
-        ]
-        let s = NSAttributedString(string: text, attributes: attrs)
-        let size = s.size()
-        let box = CGRect(x: p.x, y: p.y - size.height / 2 - 4, width: size.width + 24, height: size.height + 8)
-        NSColor(white: 0.12, alpha: 0.72).setFill()
-        NSBezierPath(roundedRect: box, xRadius: box.height / 2, yRadius: box.height / 2).fill()
-        s.draw(at: CGPoint(x: p.x + 12, y: p.y - size.height / 2))
-    }
-
-    static let bones = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8), (5, 9), (9, 10), (10, 11),
-                        (11, 12), (9, 13), (13, 14), (14, 15), (15, 16), (13, 17), (0, 17), (17, 18), (18, 19), (19, 20)]
 }
 
+// MARK: - Live window
+
+/// Hand tracking, gestures and effects for each camera frame. Runs on its own queue.
 final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let session = AVCaptureSession()
     let view: FrameView
     private let queue = DispatchQueue(label: "camera")
-    private let ci = CIContext()
     private var pinches: [Bool: PinchState] = [:]  // by isRight
     private var smoothers: [Bool: HandSmoother] = [:]  // by isRight
+    private var menu = PinchMenu(count: effects.all.count)
+    private var frame = FingerFrame()
+    private var blackOutside = false
+    private var showHelp = true
+    private var flash: FlashHelp?
+    private var menuAt = CGPoint.zero
+    private var lastPicture: CIImage?
+    private var fps = 0.0
     private var last = CACurrentMediaTime()
+
+    // MediaPipe's handedness label; with this unmirrored picture, "Left" is the user's left hand.
+    private let effectsHandIsRight = false
 
     init(view: FrameView, name: String) throws {
         self.view = view
@@ -167,36 +125,104 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         session.addOutput(output)
     }
 
+    func key(_ key: String) {
+        queue.async { [self] in
+            switch key {
+            case "n": menu.selected = (menu.selected + 1) % menu.count
+            case "b": blackOutside.toggle()
+            case "h": showHelp.toggle()
+            case "s": save()
+            case "q": DispatchQueue.main.async { NSApp.terminate(nil) }
+            default: break
+            }
+        }
+    }
+
+    /// The camera picture, without effects or help, to mac/captures/ (for `--check`).
+    private func save() {
+        guard let picture = lastPicture else { return }
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../captures").standardized
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = "frame-\(Int(Date().timeIntervalSince1970 * 1000)).png"
+        try? ciContext.writePNGRepresentation(of: picture, to: folder.appendingPathComponent(name), format: .RGBA8,
+                                              colorSpace: CGColorSpaceCreateDeviceRGB())
+        print("saved captures/\(name)")
+    }
+
     func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
         let image = PixelImage(base: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self),
-                               width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer),
-                               bytesPerRow: CVPixelBufferGetBytesPerRow(buffer))
+                               width: width, height: height, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer))
         let raw = (try? tracker.process(image)) ?? []
-        let time = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-        let hands = raw.map { smoothers[$0.isRight, default: HandSmoother()]($0, at: time) }
         CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
+        let time = CMSampleBufferGetPresentationTimeStamp(sample).seconds
+        let now = CACurrentMediaTime()
+        let hands = raw.map { smoothers[$0.isRight, default: HandSmoother()]($0, at: time) }
 
-        var pinched: [Bool] = []
+        let help = gestures(hands, imageHeight: Float(height), now: now)
+        let box = frame.update(hands, now: time)
+        let picture = CIImage(cvPixelBuffer: buffer)
+        lastPicture = picture
+        let effect = effects.all[menu.selected]
+        let composed = compose(picture, frame: box, effect: effect.apply, blackOutside: blackOutside, time: now)
+        guard let cg = ciContext.createCGImage(composed, from: picture.extent) else { return }
+
+        fps = 0.9 * fps + 0.1 / max(now - last, 1e-6)
+        last = now
+        var scene = Scene(image: cg, hands: help, flash: flash, showHelp: showHelp)
+        if menu.isOpen {
+            scene.menu = MenuHelp(names: effects.all.map(\.name), selected: menu.selected, anchor: menu.startIndex,
+                                  at: menuAt, stepPx: CGFloat(PinchMenu.step) * CGFloat(height))
+            scene.hint = "Move the pinch down or up to pick, open your fingers to keep it"
+        } else {
+            scene.hint = hint(handsSeen: hands.count, frameOK: box != nil)
+        }
+        scene.status = String(format: "%.0f fps · hands: %d · %@%@", fps, hands.count, effect.name,
+                              blackOutside ? " · black" : "")
+        DispatchQueue.main.async { [view] in
+            view.scene = scene
+            view.needsDisplay = true
+        }
+    }
+
+    /// Pinch states, the effect list and black-outside; returns each hand's help.
+    private func gestures(_ hands: [Hand], imageHeight: Float, now: Double) -> [HandHelp] {
         for side in [true, false] where !hands.contains(where: { $0.isRight == side }) {
             pinches[side, default: .init()].handLost()
             smoothers[side] = nil  // start fresh when the hand comes back
         }
-        for hand in hands {
-            _ = pinches[hand.isRight, default: .init()].update(Pinch.gapCm(hand))
-            pinched.append(pinches[hand.isRight]!.closed)
+        return hands.map { hand in
+            let gap = Pinch.gapCm(hand)
+            let triggered = pinches[hand.isRight, default: .init()].update(gap)
+            let closed = pinches[hand.isRight]!.closed
+            let tip = (hand.landmarks[4] + hand.landmarks[8]) / 2
+            let at = CGPoint(x: CGFloat(tip.x), y: CGFloat(tip.y))
+            let isEffects = hand.isRight == effectsHandIsRight
+            if isEffects {
+                let event = menu.update(pinched: closed, y: tip.y / imageHeight, now: now)
+                if menu.isOpen { menuAt = CGPoint(x: at.x, y: CGFloat(menu.startY * imageHeight)) }
+                if event != nil { flash = FlashHelp(text: effects.all[menu.selected].name, at: at, started: now) }
+            } else if triggered {
+                blackOutside.toggle()
+                flash = FlashHelp(text: "black \(blackOutside ? "on" : "off")", at: at, started: now)
+            }
+            return HandHelp(points: hand.landmarks.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) },
+                            colour: isEffects ? Palette.effects : Palette.black,
+                            action: isEffects ? "next effect" : "black outside", gapCm: gap, pinched: closed,
+                            pinchedText: isEffects ? (menu.isOpen ? "" : "let go: next, hold: list")
+                                                   : "black outside - open to pinch again")
         }
-        let cg = ci.createCGImage(CIImage(cvPixelBuffer: buffer), from: CIImage(cvPixelBuffer: buffer).extent)
-        let now = CACurrentMediaTime()
-        let fps = 1 / (now - last)
-        last = now
-        DispatchQueue.main.async { [view] in
-            view.image = cg
-            view.hands = hands
-            view.pinched = pinched
-            view.fps = view.fps * 0.9 + fps * 0.1
-            view.needsDisplay = true
+    }
+
+    private func hint(handsSeen: Int, frameOK: Bool) -> String {
+        switch (handsSeen, frameOK) {
+        case (0, _): "Show both hands, palms to the camera"
+        case (1, _): "Show your other hand too, to make a frame"
+        case (_, false): "Spread thumbs and index fingers to make a bigger frame"
+        default: "Blue pinch: next effect (hold: list)  ·  Pink pinch: black outside  ·  h hides help"
         }
     }
 }
@@ -226,6 +252,9 @@ do {
     print(error.localizedDescription)
     exit(1)
 }
+frameView.onKey = { camera.key($0) }
+// The flash and list animate between frames too.
+Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { _ in frameView.needsDisplay = true }
 AVCaptureDevice.requestAccess(for: .video) { ok in
     guard ok else { print("Camera access denied. Allow it for your terminal app in System Settings."); exit(1) }
     camera.session.startRunning()

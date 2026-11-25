@@ -54,16 +54,20 @@ permission for your terminal app.
 
 A native start on the same hand tracking, without Python: MediaPipe's two
 hand models, converted to ONNX, run through ONNX Runtime (the landmark model
-on Core ML). It shows each tracked hand and the thumb–index gap in cm. It has
-no effects and no virtual camera yet.
+on Core ML). It has the finger frame, the 12 effects (on Core Image), the
+pinch picker and black-outside, with the same on-screen help. The blue hand
+picks effects, the pink hand turns black-outside on or off. It has no virtual
+camera yet.
 
 ```bash
 brew install onnxruntime
 cd mac && swift run -c release HandFX
 ```
 
-- `s` in the window saves the camera picture to `mac/captures/`.
+- Keys: `n` next effect, `b` black outside, `h` help, `s` save the camera
+  picture to `mac/captures/`, `q` quit.
 - `HandFX --check a.png` prints the hands found in a picture as JSON.
+- `HandFX --effects a.png out/` renders every effect on a picture.
 - The pinch gap leaves out depth: the model guesses it poorly, and a closed
   pinch facing the camera can read 3–6 cm apart in depth.
 
