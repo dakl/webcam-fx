@@ -1,0 +1,23 @@
+[project]
+name = "webcam-fx"
+version = "0.1.0"
+description = "Webcam effects you control with your hands"
+readme = "README.md"
+authors = [
+    { name = "Daniel Klevebring", email = "daniel.klevebring@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "mediapipe>=1.2.3",
+    "numpy>=2.5.5",
+    "opencv-python>=5.1.0.95",
+    "pyobjc-framework-quartz>=13.0",
+    "pyvirtualcam>=0.15.0",
+]
+
+[project.scripts]
+webcam-fx = "webcam_fx:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
