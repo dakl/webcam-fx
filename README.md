@@ -54,7 +54,8 @@ permission for your terminal app.
 
 A native start on the same hand tracking, without Python: MediaPipe's two
 hand models, converted to ONNX, run through ONNX Runtime (the landmark model
-on Core ML). It has the finger frame, the 12 effects (on Core Image), the
+on Core ML). It has the finger frame, 13 effects (on Core Image; "pixel art" cuts you out
+with Vision and redraws you in the ENDESGA 32 palette), the
 pinch picker and black-outside, with the same on-screen help. The blue hand
 picks effects, the pink hand turns black-outside on or off. It has no virtual
 camera yet.
