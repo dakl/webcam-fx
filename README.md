@@ -63,7 +63,7 @@ depth badly. The window shows a gauge for each hand, for example
 
 | Control | What it does |
 |---------|--------------|
-| Effect | Selects the effect. For **pixel art**, two more menus select the palette (ENDESGA 32, Sweetie 16, PICO-8, Game Boy, 1-bit) and the block size (32 to 128 blocks across). |
+| Effect | Selects the effect. For **pixel art**, two more menus select the palette (ENDESGA 32, Sweetie 16, PICO-8, Game Boy, 1-bit) and the block size (32 to 128 blocks across). For **ascii**, three more menus select the characters (classic, detailed, blocks, dots), the colour (green, amber, white, or the picture's colours) and the number of columns (40 to 160). |
 | Black outside | Makes the picture outside the frame black. |
 | Hand gestures | Off: hands are not tracked, and pinches change nothing. |
 | Help | Shows or hides the hand drawings and hints in the window. |

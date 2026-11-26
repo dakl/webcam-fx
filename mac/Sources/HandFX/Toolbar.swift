@@ -1,12 +1,15 @@
 import AppKit
 import PixelGrid
 
-/// The controls under the picture: effect, black outside, hand gestures, help, removing a drawn
+/// The controls under the picture: effect (with pixel art and ascii settings), black outside, hand gestures, help, removing a drawn
 /// frame, and the status (fps, hands, camera). `refresh()` shows changes made by pinches and keys too.
 final class Toolbar: NSView {
     private let effect = NSPopUpButton()
     private let palette = NSPopUpButton()  // pixel art only
     private let blocks = NSPopUpButton()  // pixel art only
+    private let characters = NSPopUpButton()  // ascii only
+    private let colour = NSPopUpButton()  // ascii only
+    private let columns = NSPopUpButton()  // ascii only
     private let black = NSButton(checkboxWithTitle: "Black outside", target: nil, action: nil)
     private let gestures = NSButton(checkboxWithTitle: "Hand gestures", target: nil, action: nil)
     private let help = NSButton(checkboxWithTitle: "Help", target: nil, action: nil)
@@ -26,9 +29,13 @@ final class Toolbar: NSView {
         effect.addItems(withTitles: effects.all.map(\.name))
         palette.addItems(withTitles: Palette.all.map(\.name))
         blocks.addItems(withTitles: PixelArt.blockChoices.map { "\($0) blocks" })
+        characters.addItems(withTitles: AsciiArt.characterSets.map(\.name))
+        colour.addItems(withTitles: AsciiArt.Colour.allCases.map(\.rawValue))
+        columns.addItems(withTitles: AsciiArt.columnChoices.map { "\($0) columns" })
         for (control, action) in [
             (effect as NSControl, #selector(pickEffect)), (palette, #selector(pickPalette)),
-            (blocks, #selector(pickBlocks)), (black, #selector(setBlack)),
+            (blocks, #selector(pickBlocks)), (characters, #selector(pickCharacters)),
+            (colour, #selector(pickColour)), (columns, #selector(pickColumns)), (black, #selector(setBlack)),
             (gestures, #selector(setGestures)), (help, #selector(setHelp)),
             (lock, #selector(setLock)), (removeFrame, #selector(remove)),
         ] {
@@ -47,7 +54,7 @@ final class Toolbar: NSView {
         let spacer = NSView()
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
         let stack = NSStackView(views: [
-            NSTextField(labelWithString: "Effect"), effect, palette, blocks, black, gestures, help,
+            NSTextField(labelWithString: "Effect"), effect, palette, blocks, characters, colour, columns, black, gestures, help,
             lock, removeFrame, tip, spacer, status,
         ])
         stack.spacing = 16
@@ -71,6 +78,12 @@ final class Toolbar: NSView {
         if palette.indexOfSelectedItem != c.palette { palette.selectItem(at: c.palette) }
         let blockIndex = PixelArt.blockChoices.firstIndex(of: c.blocksAcross) ?? 0
         if blocks.indexOfSelectedItem != blockIndex { blocks.selectItem(at: blockIndex) }
+        let asciiOn = effects.all[c.selected].name == "ascii"
+        for popup in [characters, colour, columns] where popup.isHidden == asciiOn { popup.isHidden = !asciiOn }
+        if characters.indexOfSelectedItem != c.asciiCharacters { characters.selectItem(at: c.asciiCharacters) }
+        if colour.indexOfSelectedItem != c.asciiColour { colour.selectItem(at: c.asciiColour) }
+        let columnIndex = AsciiArt.columnChoices.firstIndex(of: c.asciiColumns) ?? 0
+        if columns.indexOfSelectedItem != columnIndex { columns.selectItem(at: columnIndex) }
         for (box, on) in [(black, c.blackOutside), (gestures, c.gesturesOn), (help, c.showHelp)] {
             let state: NSControl.StateValue = on ? .on : .off
             if box.state != state { box.state = state }
@@ -88,6 +101,9 @@ final class Toolbar: NSView {
     @objc private func pickEffect() { camera.select(effect.indexOfSelectedItem) }
     @objc private func pickPalette() { camera.setPalette(palette.indexOfSelectedItem) }
     @objc private func pickBlocks() { camera.setBlocksAcross(PixelArt.blockChoices[blocks.indexOfSelectedItem]) }
+    @objc private func pickCharacters() { camera.setAsciiCharacters(characters.indexOfSelectedItem) }
+    @objc private func pickColour() { camera.setAsciiColour(colour.indexOfSelectedItem) }
+    @objc private func pickColumns() { camera.setAsciiColumns(AsciiArt.columnChoices[columns.indexOfSelectedItem]) }
     @objc private func setBlack() { camera.setBlackOutside(black.state == .on) }
     @objc private func setGestures() { camera.setGestures(gestures.state == .on) }
     @objc private func setHelp() { camera.setShowHelp(help.state == .on) }

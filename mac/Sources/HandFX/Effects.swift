@@ -41,7 +41,7 @@ struct Effects {
                     return f.outputImage!.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
                 }
             ),
-            ("ascii", { image, rect, _ in ascii(image, rect, context: context) }),
+            ("ascii", { image, rect, _ in asciiArt(image, rect) }),
             (
                 "comic",
                 { image, _, _ in
@@ -151,45 +151,6 @@ private func nightVision(_ image: CIImage, _ rect: CGRect) -> CIImage {
     stripes.sharpness = 1
     let scanlines = stripes.outputImage!.transformed(by: CGAffineTransform(rotationAngle: .pi / 2))
     return green.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: scanlines])
-}
-
-/// Green characters on black, one per 8 px cell, darker cells get thinner characters.
-private func ascii(_ image: CIImage, _ rect: CGRect, context: CIContext) -> CIImage {
-    let cell: CGFloat = 8
-    let chars = Array(" .:-=+*#%@")
-    let cols = Int(rect.width / cell)
-    let rows = Int(rect.height / cell)
-    guard cols > 0, rows > 0 else { return image }
-    // One grey value per cell: shrink the frame so each cell becomes one pixel.
-    let small = image.cropped(to: rect)
-        .transformed(
-            by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY)
-                .concatenating(CGAffineTransform(scaleX: 1 / cell, y: 1 / cell)))
-    var grey = [UInt8](repeating: 0, count: cols * rows)
-    context.render(
-        small.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0]),
-        toBitmap: &grey, rowBytes: cols, bounds: CGRect(x: 0, y: 0, width: cols, height: rows),
-        format: .L8, colorSpace: nil)
-    let w = Int(rect.width)
-    let h = Int(rect.height)
-    let cg = CGContext(
-        data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    cg.setFillColor(.black)
-    cg.fill(CGRect(x: 0, y: 0, width: w, height: h))
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: false)
-    // One string per row, spaced so each character takes exactly one cell: a draw per character
-    // is tens of thousands of draws per frame on a large frame.
-    let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-    let advance = ("M" as NSString).size(withAttributes: [.font: font]).width
-    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.green, .kern: cell - advance]
-    for row in 0..<rows {  // the bitmap's first row is the picture's top; Core Graphics counts from the bottom
-        let line = String((0..<cols).map { chars[Int(grey[row * cols + $0]) * (chars.count - 1) / 255] })
-        line.draw(at: CGPoint(x: 0, y: CGFloat(rows - 1 - row) * cell - 2), withAttributes: attrs)
-    }
-    NSGraphicsContext.restoreGraphicsState()
-    return CIImage(cgImage: cg.makeImage()!).transformed(by: CGAffineTransform(translationX: rect.minX, y: rect.minY))
 }
 
 /// The camera picture with `effect` inside `frame` (image pixels, origin top-left) and a white border.

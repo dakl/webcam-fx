@@ -20,6 +20,21 @@ enum Settings {
         set { defaults.set(newValue, forKey: "blocksAcross") }
     }
 
+    static var asciiCharacters: String? {
+        get { defaults.string(forKey: "asciiCharacters") }
+        set { defaults.set(newValue, forKey: "asciiCharacters") }
+    }
+
+    static var asciiColour: String? {
+        get { defaults.string(forKey: "asciiColour") }
+        set { defaults.set(newValue, forKey: "asciiColour") }
+    }
+
+    static var asciiColumns: Int {
+        get { defaults.integer(forKey: "asciiColumns") }
+        set { defaults.set(newValue, forKey: "asciiColumns") }
+    }
+
     static func bool(_ key: String, or fallback: Bool) -> Bool {
         defaults.object(forKey: key) as? Bool ?? fallback
     }

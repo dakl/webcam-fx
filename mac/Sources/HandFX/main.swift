@@ -25,10 +25,11 @@ func option(_ name: String) -> String? {
 }
 
 // Used from the camera queue as well as the main thread. CIContext is thread-safe; the effects are
-// fixed after start; pixelArt, the tracker and virtualCamera's frame sending run only on the camera
+// fixed after start; pixelArt, asciiArt, the tracker and virtualCamera's frame sending run only on the camera
 // queue, and virtualCamera guards its status with a lock.
 let ciContext = CIContext()
 nonisolated(unsafe) let pixelArt = PixelArt(context: ciContext)  // shared: its palette and block size are settings
+nonisolated(unsafe) let asciiArt = AsciiArt(context: ciContext)  // shared: its characters, colour and columns are settings
 nonisolated(unsafe) let effects = Effects(context: ciContext)
 nonisolated(unsafe) let virtualCamera = VirtualCamera()
 
@@ -122,6 +123,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         if let saved = effects.all.firstIndex(where: { $0.name == Settings.effect }) { menu.selected = saved }
         if let saved = Palette.all.first(where: { $0.name == Settings.palette }) { pixelArt.palette = saved }
         if PixelArt.blockChoices.contains(Settings.blocksAcross) { pixelArt.blocksAcross = Settings.blocksAcross }
+        if let saved = AsciiArt.characterSets.first(where: { $0.name == Settings.asciiCharacters }) { asciiArt.characters = saved }
+        if let saved = Settings.asciiColour.flatMap(AsciiArt.Colour.init(rawValue:)) { asciiArt.colour = saved }
+        if AsciiArt.columnChoices.contains(Settings.asciiColumns) { asciiArt.columns = Settings.asciiColumns }
         publishControls()
         let devices = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.builtInWideAngleCamera, .external],
@@ -155,9 +159,10 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     /// The settings as of the last change, for the toolbar. It reads this copy and never waits for
     /// the camera queue, which can be busy for a while with a slow effect.
-    struct Controls {
+    struct Controls: Equatable {
         var selected = 0, blackOutside = false, gesturesOn = true, showHelp = true
         var palette = 0, blocksAcross = 64  // pixel art
+        var asciiCharacters = 0, asciiColour = 0, asciiColumns = 80  // ascii
     }
     var controls: Controls { controlsLock.withLock { published } }
     private var published = Controls()
@@ -168,14 +173,12 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         let c = Controls(
             selected: menu.selected, blackOutside: blackOutside, gesturesOn: gesturesOn,
             showHelp: showHelp, palette: Palette.all.firstIndex(of: pixelArt.palette) ?? 0,
-            blocksAcross: pixelArt.blocksAcross)
+            blocksAcross: pixelArt.blocksAcross,
+            asciiCharacters: AsciiArt.characterSets.firstIndex(of: asciiArt.characters) ?? 0,
+            asciiColour: AsciiArt.Colour.allCases.firstIndex(of: asciiArt.colour) ?? 0, asciiColumns: asciiArt.columns)
         let changed = controlsLock.withLock {
             defer { published = c }
-            return (
-                published.selected, published.blackOutside, published.gesturesOn, published.showHelp,
-                published.palette, published.blocksAcross
-            )
-                != (c.selected, c.blackOutside, c.gesturesOn, c.showHelp, c.palette, c.blocksAcross)
+            return published != c
         }
         guard changed else { return }  // this runs every frame; save only a change
         Settings.effect = effects.all[c.selected].name
@@ -184,6 +187,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         Settings.set("showHelp", c.showHelp)
         Settings.palette = Palette.all[c.palette].name
         Settings.blocksAcross = c.blocksAcross
+        Settings.asciiCharacters = AsciiArt.characterSets[c.asciiCharacters].name
+        Settings.asciiColour = AsciiArt.Colour.allCases[c.asciiColour].rawValue
+        Settings.asciiColumns = c.asciiColumns
     }
 
     /// A frame drawn with the mouse, in image pixels; nil removes it.
@@ -198,6 +204,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     func setShowHelp(_ on: Bool) { change { $0.showHelp = on } }
     func setPalette(_ index: Int) { change { _ in pixelArt.palette = Palette.all[index] } }
     func setBlocksAcross(_ blocks: Int) { change { _ in pixelArt.blocksAcross = blocks } }
+    func setAsciiCharacters(_ index: Int) { change { _ in asciiArt.characters = AsciiArt.characterSets[index] } }
+    func setAsciiColour(_ index: Int) { change { _ in asciiArt.colour = AsciiArt.Colour.allCases[index] } }
+    func setAsciiColumns(_ columns: Int) { change { _ in asciiArt.columns = columns } }
     func setGestures(_ on: Bool) { change { $0.applyGestures(on) } }
 
     private func change(_ apply: @escaping (Camera) -> Void) {
