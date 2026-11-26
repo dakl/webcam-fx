@@ -57,13 +57,21 @@ hand models, converted to ONNX, run through ONNX Runtime (the landmark model
 on Core ML). It has the finger frame, 13 effects (on Core Image; "pixel art" cuts you out
 with Vision and redraws you in the ENDESGA 32 palette), the
 pinch picker and black-outside, with the same on-screen help. The blue hand
-picks effects, the pink hand turns black-outside on or off. It has no virtual
-camera yet.
+picks effects, the pink hand turns black-outside on or off. As HandFX.app it
+is also a camera, "HandFX", for meeting apps.
 
 ```bash
-brew install onnxruntime
-cd mac && swift run -c release HandFX
+brew install onnxruntime xcodegen
+cd mac && swift run -c release HandFX   # window only
+cd mac && ./make-app.sh                 # HandFX.app with the camera, into /Applications
 ```
+
+`make-app.sh` signs with the first team in Xcode > Settings > Accounts. The
+first time, open HandFX.app, switch on HandFX Camera in System Settings >
+General > Login Items & Extensions > Camera Extensions, and allow camera
+access. Then pick the "HandFX" camera in your meeting app; it shows grey while
+HandFX.app is closed. Effects can also be picked from the Effects menu or with
+a right-click.
 
 - Keys: `n` next effect, `b` black outside, `h` help, `s` save the camera
   picture to `mac/captures/`, `q` quit.

@@ -17,6 +17,7 @@ import HandTracking
 // Keys in the window: n next effect, b black outside, h hide or show help, s save the camera
 // picture to mac/captures/, q quit.
 
+setvbuf(stdout, nil, _IOLBF, 0)  // print each line at once, also into a pipe or file
 let args = CommandLine.arguments
 func option(_ name: String) -> String? {
     args.firstIndex(of: name).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
@@ -24,6 +25,7 @@ func option(_ name: String) -> String? {
 
 let ciContext = CIContext()
 let effects = Effects(context: ciContext)
+let virtualCamera = VirtualCamera()
 
 if let i = args.firstIndex(of: "--effects"), i + 2 < args.count {
     renderEffects(picture: args[i + 1], into: args[i + 2])
@@ -125,6 +127,14 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         session.addOutput(output)
     }
 
+    /// The effect chosen with the mouse.
+    func select(_ index: Int) {
+        queue.async { [self] in menu.selected = index }
+    }
+
+    var selected: Int { queue.sync { menu.selected } }
+    var isBlackOutside: Bool { queue.sync { blackOutside } }
+
     func key(_ key: String) {
         queue.async { [self] in
             switch key {
@@ -168,6 +178,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         lastPicture = picture
         let effect = effects.all[menu.selected]
         let composed = compose(picture, frame: box, effect: effect.apply, blackOutside: blackOutside, time: now)
+        virtualCamera.send(composed, context: ciContext)  // effects, no help, not mirrored
         guard let cg = ciContext.createCGImage(composed, from: picture.extent) else { return }
 
         fps = 0.9 * fps + 0.1 / max(now - last, 1e-6)
@@ -180,8 +191,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         } else {
             scene.hint = hint(handsSeen: hands.count, frameOK: box != nil)
         }
-        scene.status = String(format: "%.0f fps · hands: %d · %@%@", fps, hands.count, effect.name,
-                              blackOutside ? " · black" : "")
+        scene.status = String(format: "%.0f fps · hands: %d · %@%@ · camera: %@", fps, hands.count, effect.name,
+                              blackOutside ? " · black" : "", virtualCamera.status)
         DispatchQueue.main.async { [view] in
             view.scene = scene
             view.needsDisplay = true
@@ -253,10 +264,51 @@ do {
     exit(1)
 }
 frameView.onKey = { camera.key($0) }
+
+/// Pick an effect with the mouse: the Effects menu in the menu bar, or a right-click in the window.
+final class EffectMenu: NSObject, NSMenuDelegate {
+    let menu = NSMenu(title: "Effects")
+
+    override init() {
+        super.init()
+        menu.delegate = self
+        for (i, effect) in effects.all.enumerated() {
+            let item = NSMenuItem(title: effect.name, action: #selector(pick(_:)), keyEquivalent: "")
+            item.tag = i
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let black = NSMenuItem(title: "Black outside", action: #selector(toggleBlack), keyEquivalent: "")
+        black.target = self
+        menu.addItem(black)
+    }
+
+    @objc func pick(_ item: NSMenuItem) { camera.select(item.tag) }
+    @objc func toggleBlack() { camera.key("b") }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let selected = camera.selected
+        for item in menu.items where item.action == #selector(pick(_:)) { item.state = item.tag == selected ? .on : .off }
+        menu.items.last?.state = camera.isBlackOutside ? .on : .off
+    }
+}
+
+let effectMenu = EffectMenu()
+frameView.menu = effectMenu.menu  // right-click
+let mainMenu = NSMenu()
+let appItem = NSMenuItem()
+appItem.submenu = NSMenu()
+appItem.submenu!.addItem(withTitle: "Quit HandFX", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+let effectsItem = NSMenuItem()
+effectsItem.submenu = effectMenu.menu
+mainMenu.items = [appItem, effectsItem]
+app.mainMenu = mainMenu
+virtualCamera.install()
 // The flash and list animate between frames too.
 Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { _ in frameView.needsDisplay = true }
 AVCaptureDevice.requestAccess(for: .video) { ok in
-    guard ok else { print("Camera access denied. Allow it for your terminal app in System Settings."); exit(1) }
+    guard ok else { return print("Camera access denied. Allow it in System Settings > Privacy & Security > Camera.") }
     camera.session.startRunning()
 }
 app.run()
