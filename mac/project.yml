@@ -9,8 +9,8 @@ settings:
   base:
     DEVELOPMENT_TEAM: ${TEAM_ID}
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.5"
-    CURRENT_PROJECT_VERSION: "5"
+    MARKETING_VERSION: "0.6"
+    CURRENT_PROJECT_VERSION: "6"
     ENABLE_HARDENED_RUNTIME: YES  # required for notarisation
     ARCHS: arm64  # the NuGet ONNX Runtime has no Intel build
 packages:
