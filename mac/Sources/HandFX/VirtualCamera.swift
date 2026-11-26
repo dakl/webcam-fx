@@ -53,7 +53,7 @@ final class VirtualCamera: NSObject, OSSystemExtensionRequestDelegate {
     }
 
     func request(_ request: OSSystemExtensionRequest, didFinishWithResult result: OSSystemExtensionRequest.Result) {
-        status = result == .completed ? "installed" : "restart to finish"
+        if queue == nil { status = result == .completed ? "installed" : "restart to finish" }  // keep "sending"
         print(result == .completed ? "HandFX camera installed" : "HandFX camera installs after a restart")
     }
 

@@ -63,11 +63,23 @@ final class FrameView: NSView {
 
     /// The frame drawn with the mouse, in image pixels: xmin, ymin, xmax, ymax.
     var drawnBox: SIMD4<Float>? {
-        didSet { onDrawBox?(drawnBox) }
+        didSet {
+            onDrawBox?(drawnBox)
+            if let size = pictureSize {
+                let scale = SIMD4(Float(size.width), Float(size.height), Float(size.width), Float(size.height))
+                Settings.frame = drawnBox.map { $0 / scale }
+            }
+        }
     }
 
+    /// The saved frame, waiting for the first picture to give it a size.
+    private var savedFrame = Settings.frame
+    private var pictureSize: CGSize?
+
     /// Locked: the mouse cannot draw, move, resize or remove the frame, and the handles are hidden.
-    var frameLocked = false
+    var frameLocked = Settings.bool("frameLocked", or: false) {
+        didSet { Settings.set("frameLocked", frameLocked) }
+    }
 
     /// What a mouse drag does: draw a new frame, move the frame, or move some of its edges.
     private enum Drag {
@@ -187,6 +199,11 @@ final class FrameView: NSView {
         bounds.fill()
         guard let scene else { return }
         let image = scene.image
+        pictureSize = CGSize(width: image.width, height: image.height)
+        if let saved = savedFrame {
+            savedFrame = nil
+            drawnBox = saved * SIMD4(Float(image.width), Float(image.height), Float(image.width), Float(image.height))
+        }
         scale = min(bounds.width / CGFloat(image.width), bounds.height / CGFloat(image.height))
         size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
         origin = CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2)

@@ -66,6 +66,8 @@ final class Toolbar: NSView {
         if removeFrame.isEnabled != canRemove { removeFrame.isEnabled = canRemove }
         let canLock = hasFrame || frameView.frameLocked
         if lock.isEnabled != canLock { lock.isEnabled = canLock }
+        let locked: NSControl.StateValue = frameView.frameLocked ? .on : .off
+        if lock.state != locked { lock.state = locked }
     }
 
     @objc private func pickEffect() { camera.select(effect.indexOfSelectedItem) }

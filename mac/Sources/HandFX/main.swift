@@ -97,10 +97,10 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var smoothers: [Bool: HandSmoother] = [:]  // by isRight
     private var menu = PinchMenu(count: effects.all.count)
     private var frame = FingerFrame()
-    private var blackOutside = false
-    private var gesturesOn = true  // off: hands are not tracked and change nothing
+    private var blackOutside = Settings.bool("blackOutside", or: false)
+    private var gesturesOn = Settings.bool("gesturesOn", or: true)  // off: hands are not tracked and change nothing
     private var mouseBox: SIMD4<Float>?  // a frame drawn with the mouse wins over the hands' frame
-    private var showHelp = true
+    private var showHelp = Settings.bool("showHelp", or: true)
     private var flash: FlashHelp?
     private var menuAt = CGPoint.zero
     private var lastPicture: CIImage?
@@ -113,6 +113,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     init(view: FrameView, name: String) throws {
         self.view = view
         super.init()
+        if let saved = effects.all.firstIndex(where: { $0.name == Settings.effect }) { menu.selected = saved }
+        publishControls()
         let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external],
                                                        mediaType: .video, position: .unspecified).devices
         guard let device = devices.first(where: { $0.localizedName.localizedCaseInsensitiveContains(name) }) else {
@@ -148,7 +150,16 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private func publishControls() {
         let c = Controls(selected: menu.selected, blackOutside: blackOutside, gesturesOn: gesturesOn,
                          showHelp: showHelp)
-        controlsLock.withLock { published = c }
+        let changed = controlsLock.withLock {
+            defer { published = c }
+            return (published.selected, published.blackOutside, published.gesturesOn, published.showHelp)
+                != (c.selected, c.blackOutside, c.gesturesOn, c.showHelp)
+        }
+        guard changed else { return }  // this runs every frame; save only a change
+        Settings.effect = effects.all[c.selected].name
+        Settings.set("blackOutside", c.blackOutside)
+        Settings.set("gesturesOn", c.gesturesOn)
+        Settings.set("showHelp", c.showHelp)
     }
 
     /// A frame drawn with the mouse, in image pixels; nil removes it.
