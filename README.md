@@ -70,11 +70,14 @@ cd mac && ./make-app.sh                 # HandFX.app with the camera, into /Appl
 first time, open HandFX.app, switch on HandFX Camera in System Settings >
 General > Login Items & Extensions > Camera Extensions, and allow camera
 access. Then pick the "HandFX" camera in your meeting app; it shows grey while
-HandFX.app is closed. Effects can also be picked from the Effects menu or with
-a right-click.
+HandFX.app is closed.
 
-- Keys: `n` next effect, `b` black outside, `h` help, `s` save the camera
-  picture to `mac/captures/`, `q` quit.
+With the mouse: drag in the window to draw a frame (a click removes it), and
+use the Effects menu or a right-click to pick an effect, turn black-outside on
+or off, or switch hand gestures off so your hands change nothing.
+
+- Keys: `n` next effect, `b` black outside, `g` hand gestures on or off,
+  `h` help, `s` save the camera picture to `mac/captures/`, `q` quit.
 - `HandFX --check a.png` prints the hands found in a picture as JSON.
 - `HandFX --effects a.png out/` renders every effect on a picture.
 - The pinch gap leaves out depth: the model guesses it poorly, and a closed

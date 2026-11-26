@@ -98,6 +98,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var menu = PinchMenu(count: effects.all.count)
     private var frame = FingerFrame()
     private var blackOutside = false
+    private var gesturesOn = true  // off: hands are not tracked and change nothing
+    private var mouseBox: SIMD4<Float>?  // a frame drawn with the mouse wins over the hands' frame
     private var showHelp = true
     private var flash: FlashHelp?
     private var menuAt = CGPoint.zero
@@ -129,22 +131,48 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     /// The effect chosen with the mouse.
     func select(_ index: Int) {
-        queue.async { [self] in menu.selected = index }
+        queue.async { [self] in
+            menu.selected = index
+            publishControls()
+        }
     }
 
-    var selected: Int { queue.sync { menu.selected } }
-    var isBlackOutside: Bool { queue.sync { blackOutside } }
+    /// The settings as of the last change, for the menus. They read this copy and never wait for
+    /// the camera queue, which can be busy for a while with a slow effect.
+    struct Controls { var selected = 0, blackOutside = false, gesturesOn = true, hasMouseBox = false }
+    var controls: Controls { controlsLock.withLock { published } }
+    private var published = Controls()
+    private let controlsLock = NSLock()
+
+    /// Call on the camera queue after changing a setting.
+    private func publishControls() {
+        let c = Controls(selected: menu.selected, blackOutside: blackOutside, gesturesOn: gesturesOn,
+                         hasMouseBox: mouseBox != nil)
+        controlsLock.withLock { published = c }
+    }
+
+    /// A frame drawn with the mouse, in image pixels; nil removes it.
+    func setMouseBox(_ box: SIMD4<Float>?) {
+        queue.async { [self] in
+            mouseBox = box
+            publishControls()
+        }
+    }
 
     func key(_ key: String) {
         queue.async { [self] in
             switch key {
             case "n": menu.selected = (menu.selected + 1) % menu.count
             case "b": blackOutside.toggle()
+            case "g":
+                gesturesOn.toggle()
+                if !gesturesOn { (pinches, smoothers, frame, flash) = ([:], [:], FingerFrame(), nil) }
             case "h": showHelp.toggle()
             case "s": save()
             case "q": DispatchQueue.main.async { NSApp.terminate(nil) }
             default: break
             }
+            publishControls()
         }
     }
 
@@ -166,14 +194,16 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
         let image = PixelImage(base: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self),
                                width: width, height: height, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer))
-        let raw = (try? tracker.process(image)) ?? []
+        let raw = gesturesOn ? (try? tracker.process(image)) ?? [] : []
         CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
         let time = CMSampleBufferGetPresentationTimeStamp(sample).seconds
         let now = CACurrentMediaTime()
         let hands = raw.map { smoothers[$0.isRight, default: HandSmoother()]($0, at: time) }
 
         let help = gestures(hands, imageHeight: Float(height), now: now)
-        let box = frame.update(hands, now: time)
+        publishControls()
+        let handBox = gesturesOn ? frame.update(hands, now: time) : nil
+        let box = mouseBox ?? handBox
         let picture = CIImage(cvPixelBuffer: buffer)
         lastPicture = picture
         let effect = effects.all[menu.selected]
@@ -189,9 +219,11 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                                   at: menuAt, stepPx: CGFloat(PinchMenu.step) * CGFloat(height))
             scene.hint = "Move the pinch down or up to pick, open your fingers to keep it"
         } else {
-            scene.hint = hint(handsSeen: hands.count, frameOK: box != nil)
+            scene.hint = gesturesOn ? hint(handsSeen: hands.count, frameOK: box != nil)
+                : "Hand gestures off · drag to draw a frame, right-click for effects, g turns gestures on"
         }
-        scene.status = String(format: "%.0f fps · hands: %d · %@%@ · camera: %@", fps, hands.count, effect.name,
+        scene.status = String(format: "%.0f fps · %@ · %@%@ · camera: %@", fps,
+                              gesturesOn ? "hands: \(hands.count)" : "gestures off", effect.name,
                               blackOutside ? " · black" : "", virtualCamera.status)
         DispatchQueue.main.async { [view] in
             view.scene = scene
@@ -264,9 +296,10 @@ do {
     exit(1)
 }
 frameView.onKey = { camera.key($0) }
+frameView.onDrawBox = { camera.setMouseBox($0) }
 
 /// Pick an effect with the mouse: the Effects menu in the menu bar, or a right-click in the window.
-final class EffectMenu: NSObject, NSMenuDelegate {
+final class EffectMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
     let menu = NSMenu(title: "Effects")
 
     override init() {
@@ -279,18 +312,29 @@ final class EffectMenu: NSObject, NSMenuDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let black = NSMenuItem(title: "Black outside", action: #selector(toggleBlack), keyEquivalent: "")
-        black.target = self
-        menu.addItem(black)
+        for (title, action) in [("Black outside", #selector(toggleBlack)), ("Hand gestures", #selector(toggleGestures)),
+                                ("Remove drawn frame", #selector(removeFrame))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
     }
 
     @objc func pick(_ item: NSMenuItem) { camera.select(item.tag) }
     @objc func toggleBlack() { camera.key("b") }
+    @objc func toggleGestures() { camera.key("g") }
+    @objc func removeFrame() { camera.setMouseBox(nil) }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        item.action != #selector(removeFrame) || camera.controls.hasMouseBox
+    }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        let selected = camera.selected
+        let c = camera.controls
+        let selected = c.selected
         for item in menu.items where item.action == #selector(pick(_:)) { item.state = item.tag == selected ? .on : .off }
-        menu.items.last?.state = camera.isBlackOutside ? .on : .off
+        menu.item(withTitle: "Black outside")?.state = c.blackOutside ? .on : .off
+        menu.item(withTitle: "Hand gestures")?.state = c.gesturesOn ? .on : .off
     }
 }
 

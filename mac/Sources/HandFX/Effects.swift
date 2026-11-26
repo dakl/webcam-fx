@@ -140,15 +140,14 @@ private func ascii(_ image: CIImage, _ rect: CGRect, context: CIContext) -> CIIm
     cg.fill(CGRect(x: 0, y: 0, width: w, height: h))
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: false)
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.green,
-    ]
+    // One string per row, spaced so each character takes exactly one cell: a draw per character
+    // is tens of thousands of draws per frame on a large frame.
+    let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+    let advance = ("M" as NSString).size(withAttributes: [.font: font]).width
+    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.green, .kern: cell - advance]
     for row in 0..<rows {  // the bitmap's first row is the picture's top; Core Graphics counts from the bottom
-        for col in 0..<cols {
-            let index = Int(grey[row * cols + col]) * (chars.count - 1) / 255
-            guard index > 0 else { continue }
-            String(chars[index]).draw(at: CGPoint(x: CGFloat(col) * cell, y: CGFloat(rows - 1 - row) * cell - 2), withAttributes: attrs)
-        }
+        let line = String((0..<cols).map { chars[Int(grey[row * cols + $0]) * (chars.count - 1) / 255] })
+        line.draw(at: CGPoint(x: 0, y: CGFloat(rows - 1 - row) * cell - 2), withAttributes: attrs)
     }
     NSGraphicsContext.restoreGraphicsState()
     return CIImage(cgImage: cg.makeImage()!).transformed(by: CGAffineTransform(translationX: rect.minX, y: rect.minY))

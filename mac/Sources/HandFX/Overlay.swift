@@ -58,6 +58,32 @@ final class FrameView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
+    /// Called while you drag a frame with the mouse (image pixels), and with nil on a plain click.
+    var onDrawBox: ((SIMD4<Float>?) -> Void)?
+    private var dragStart: CGPoint?
+
+    /// A view point's place in the picture: the inverse of `view(_:)`.
+    private func picture(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: (origin.x + size.width - p.x) / scale, y: (p.y - origin.y) / scale)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStart = convert(event.locationInWindow, from: nil)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = dragStart else { return }
+        let a = picture(start), b = picture(convert(event.locationInWindow, from: nil))
+        onDrawBox?(SIMD4(Float(min(a.x, b.x)), Float(min(a.y, b.y)), Float(max(a.x, b.x)), Float(max(a.y, b.y))))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { dragStart = nil }
+        guard let start = dragStart else { return }
+        let end = convert(event.locationInWindow, from: nil)
+        if hypot(end.x - start.x, end.y - start.y) < 4 { onDrawBox?(nil) }  // a click removes the drawn frame
+    }
+
     override func keyDown(with event: NSEvent) {
         guard let key = event.charactersIgnoringModifiers else { return super.keyDown(with: event) }
         onKey?(key)
