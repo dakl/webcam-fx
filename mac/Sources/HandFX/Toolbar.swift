@@ -1,9 +1,12 @@
 import AppKit
+import PixelGrid
 
 /// The controls under the picture: effect, black outside, hand gestures, help, removing a drawn
 /// frame, and the status (fps, hands, camera). `refresh()` shows changes made by pinches and keys too.
 final class Toolbar: NSView {
     private let effect = NSPopUpButton()
+    private let palette = NSPopUpButton()  // pixel art only
+    private let blocks = NSPopUpButton()  // pixel art only
     private let black = NSButton(checkboxWithTitle: "Black outside", target: nil, action: nil)
     private let gestures = NSButton(checkboxWithTitle: "Hand gestures", target: nil, action: nil)
     private let help = NSButton(checkboxWithTitle: "Help", target: nil, action: nil)
@@ -21,7 +24,10 @@ final class Toolbar: NSView {
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         effect.addItems(withTitles: effects.all.map(\.name))
-        for (control, action) in [(effect as NSControl, #selector(pickEffect)), (black, #selector(setBlack)),
+        palette.addItems(withTitles: Palette.all.map(\.name))
+        blocks.addItems(withTitles: PixelArt.blockChoices.map { "\($0) blocks" })
+        for (control, action) in [(effect as NSControl, #selector(pickEffect)), (palette, #selector(pickPalette)),
+                                  (blocks, #selector(pickBlocks)), (black, #selector(setBlack)),
                                   (gestures, #selector(setGestures)), (help, #selector(setHelp)),
                                   (lock, #selector(setLock)), (removeFrame, #selector(remove))] {
             control.target = self
@@ -38,7 +44,7 @@ final class Toolbar: NSView {
         }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
-        let stack = NSStackView(views: [NSTextField(labelWithString: "Effect"), effect, black, gestures, help,
+        let stack = NSStackView(views: [NSTextField(labelWithString: "Effect"), effect, palette, blocks, black, gestures, help,
                                         lock, removeFrame, tip, spacer, status])
         stack.spacing = 16
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
@@ -56,6 +62,11 @@ final class Toolbar: NSView {
     func refresh() {
         let c = camera.controls
         if effect.indexOfSelectedItem != c.selected { effect.selectItem(at: c.selected) }
+        let pixelArtOn = effects.all[c.selected].name == "pixel art"
+        for popup in [palette, blocks] where popup.isHidden == pixelArtOn { popup.isHidden = !pixelArtOn }
+        if palette.indexOfSelectedItem != c.palette { palette.selectItem(at: c.palette) }
+        let blockIndex = PixelArt.blockChoices.firstIndex(of: c.blocksAcross) ?? 0
+        if blocks.indexOfSelectedItem != blockIndex { blocks.selectItem(at: blockIndex) }
         for (box, on) in [(black, c.blackOutside), (gestures, c.gesturesOn), (help, c.showHelp)] {
             let state: NSControl.StateValue = on ? .on : .off
             if box.state != state { box.state = state }
@@ -71,6 +82,8 @@ final class Toolbar: NSView {
     }
 
     @objc private func pickEffect() { camera.select(effect.indexOfSelectedItem) }
+    @objc private func pickPalette() { camera.setPalette(palette.indexOfSelectedItem) }
+    @objc private func pickBlocks() { camera.setBlocksAcross(PixelArt.blockChoices[blocks.indexOfSelectedItem]) }
     @objc private func setBlack() { camera.setBlackOutside(black.state == .on) }
     @objc private func setGestures() { camera.setGestures(gestures.state == .on) }
     @objc private func setHelp() { camera.setShowHelp(help.state == .on) }

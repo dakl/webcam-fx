@@ -8,7 +8,8 @@ let onnxLib = URL(fileURLWithPath: #filePath).deletingLastPathComponent().append
 let package = Package(
     name: "HandFX",
     platforms: [.macOS(.v14)],
-    products: [.library(name: "HandTracking", targets: ["HandTracking"])],
+    products: [.library(name: "HandTracking", targets: ["HandTracking"]),
+               .library(name: "PixelGrid", targets: ["PixelGrid"])],
     targets: [
         // ONNX Runtime's C API. Run ./fetch-onnxruntime.sh first.
         .systemLibrary(name: "COnnxRuntime"),
@@ -16,7 +17,9 @@ let package = Package(
                 resources: [.copy("Models")],
                 // HandFX.app carries the library in Contents/Frameworks; `swift run` uses Vendor/ directly.
                 linkerSettings: [.unsafeFlags(["-L", onnxLib, "-Xlinker", "-rpath", "-Xlinker", onnxLib])]),
-        .executableTarget(name: "HandFX", dependencies: ["HandTracking"]),
+        .target(name: "PixelGrid"),
+        .executableTarget(name: "HandFX", dependencies: ["HandTracking", "PixelGrid"]),
         .testTarget(name: "HandTrackingTests", dependencies: ["HandTracking"]),
+        .testTarget(name: "PixelGridTests", dependencies: ["PixelGrid"]),
     ]
 )

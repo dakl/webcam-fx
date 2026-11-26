@@ -1,36 +1,86 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import PixelGrid
 import Vision
 
-/// You as an 8-bit character. Vision cuts the person out of the frame; the person gets big
-/// pixels in the 32-colour ENDESGA 32 palette and a dark one-pixel outline, the background the
-/// same pixels darker.
+/// You as an 8-bit character. The frame is averaged into a grid of blocks, each block takes a
+/// palette colour (kept steady between frames, lone blocks cleaned up), Vision's person mask gives
+/// you a one-block black outline, and the background gets darker blocks.
+///
+/// Used only on the camera queue; `palette` and `blocksAcross` are set there too.
 final class PixelArt {
-    static let blocksAcross: CGFloat = 64
+    static let blockChoices = [32, 48, 64, 96, 128]
 
-    private let palette = PixelArt.paletteImage()
+    var palette = Palette.all[0]
+    var blocksAcross = 64
 
+    private let context: CIContext
+    private var grid = PixelGrid()
     private let request: VNGeneratePersonSegmentationRequest = {
         let r = VNGeneratePersonSegmentationRequest()
         r.qualityLevel = .balanced
         r.outputPixelFormat = kCVPixelFormatType_OneComponent8
         return r
     }()
-    func callAsFunction(_ image: CIImage, _ rect: CGRect) -> CIImage {
-        let block = max((rect.width / Self.blocksAcross).rounded(), 6)
-        let blocks = pixellate(image.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05,
-        ]), block, rect)
-        let art = palettize(blocks)
-        let background = art.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: -1.5])
-        guard let person = personMask(image, rect) else { return art }
 
-        // The mask in whole blocks, and one block wider for the outline.
-        let body = threshold(pixellate(person, block, rect))
-        let grown = threshold(pixellate(body.applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: block]),
-                                        block, rect))
-        let outlined = blend(CIImage(color: .black), over: background, mask: grown)
-        return blend(art, over: outlined, mask: body)
+    init(context: CIContext) {
+        self.context = context
+    }
+
+    func callAsFunction(_ image: CIImage, _ rect: CGRect) -> CIImage {
+        let block = max(rect.width / CGFloat(blocksAcross), 4)
+        let cols = Int((rect.width / block).rounded(.up)), rows = Int((rect.height / block).rounded(.up))
+        guard cols > 0, rows > 0 else { return image }
+
+        let boosted = image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05,
+        ])
+        let pixels = shrink(boosted, rect, block, cols, rows, format: .RGBA8, bytesPerPixel: 4)
+        let colours = stride(from: 0, to: pixels.count, by: 4).map {
+            SIMD3(Float(pixels[$0]), Float(pixels[$0 + 1]), Float(pixels[$0 + 2]))
+        }
+        let indexes = grid.quantize(colours, cols: cols, rows: rows, palette: palette)
+        let body = personMask(image, rect).map { mask in
+            shrink(mask, rect, block, cols, rows, format: .L8, bytesPerPixel: 1).map { $0 >= 128 }
+        }
+
+        var out = [UInt8](repeating: 255, count: cols * rows * 4)
+        for r in 0..<rows {
+            for c in 0..<cols {
+                let i = r * cols + c
+                var colour = palette.colours[indexes[i]]
+                if let body, !body[i] {
+                    let nearBody = (-1...1).contains { dr in
+                        (-1...1).contains { dc in
+                            let (nr, nc) = (r + dr, c + dc)
+                            return nr >= 0 && nr < rows && nc >= 0 && nc < cols && body[nr * cols + nc]
+                        }
+                    }
+                    colour = nearBody ? .zero : colour * 0.35  // outline, or darker background
+                }
+                (out[i * 4], out[i * 4 + 1], out[i * 4 + 2]) = (UInt8(colour.x), UInt8(colour.y), UInt8(colour.z))
+            }
+        }
+        let small = CIImage(bitmapData: Data(out), bytesPerRow: cols * 4, size: CGSize(width: cols, height: rows),
+                            format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        // Blow each pixel up to one sharp block; the bitmap's first row (the top) stays on top.
+        return small.samplingNearest()
+            .transformed(by: CGAffineTransform(scaleX: block, y: block)
+                .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))
+    }
+
+    /// The frame averaged down to `cols` x `rows` pixels (Lanczos, so each block is a true average),
+    /// read out top row first.
+    private func shrink(_ image: CIImage, _ rect: CGRect, _ block: CGFloat, _ cols: Int, _ rows: Int,
+                        format: CIFormat, bytesPerPixel: Int) -> [UInt8] {
+        let scaled = image.clampedToExtent().cropped(to: rect)
+            .transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
+            .applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: 1 / block, kCIInputAspectRatioKey: 1])
+        var bytes = [UInt8](repeating: 0, count: cols * rows * bytesPerPixel)
+        context.render(scaled, toBitmap: &bytes, rowBytes: cols * bytesPerPixel,
+                       bounds: CGRect(x: 0, y: 0, width: cols, height: rows), format: format,
+                       colorSpace: format == .L8 ? nil : CGColorSpace(name: CGColorSpace.sRGB))
+        return bytes
     }
 
     /// 1 where Vision sees a person, 0 elsewhere, covering `rect`.
@@ -41,50 +91,5 @@ final class PixelArt {
         let mask = CIImage(cvPixelBuffer: buffer)
         return mask.transformed(by: CGAffineTransform(scaleX: rect.width / mask.extent.width, y: rect.height / mask.extent.height)
             .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))
-    }
-
-    private func pixellate(_ image: CIImage, _ block: CGFloat, _ rect: CGRect) -> CIImage {
-        let f = CIFilter.pixellate()
-        f.inputImage = image.clampedToExtent()
-        f.center = rect.origin  // blocks line up with the frame, the same for picture and mask
-        f.scale = Float(block)
-        return f.outputImage!
-    }
-
-    private func palettize(_ image: CIImage) -> CIImage {
-        let f = CIFilter.palettize()
-        f.inputImage = image
-        f.paletteImage = palette
-        f.perceptual = true
-        return f.outputImage!
-    }
-
-    private func threshold(_ image: CIImage) -> CIImage {
-        let f = CIFilter.colorThreshold()
-        f.inputImage = image
-        f.threshold = 0.5
-        return f.outputImage!
-    }
-
-    private func blend(_ top: CIImage, over bottom: CIImage, mask: CIImage) -> CIImage {
-        let f = CIFilter.blendWithMask()
-        f.inputImage = top
-        f.backgroundImage = bottom
-        f.maskImage = mask
-        return f.outputImage!
-    }
-
-    /// The ENDESGA 32 palette (by Endesga), as a 32 x 1 picture.
-    private static func paletteImage() -> CIImage {
-        let hex: [UInt32] = [
-            0xBE4A2F, 0xD77643, 0xEAD4AA, 0xE4A672, 0xB86F50, 0x733E39, 0x3E2731, 0xA22633,
-            0xE43B44, 0xF77622, 0xFEAE34, 0xFEE761, 0x63C74D, 0x3E8948, 0x265C42, 0x193C3E,
-            0x124E89, 0x0099DB, 0x2CE8F5, 0xFFFFFF, 0xC0CBDC, 0x8B9BB4, 0x5A6988, 0x3A4466,
-            0x262B44, 0x181425, 0xFF0044, 0x68386C, 0xB55088, 0xF6757A, 0xE8B796, 0xC28569,
-        ]
-        let bytes = hex.flatMap { c -> [UInt8] in [UInt8(c >> 16 & 0xFF), UInt8(c >> 8 & 0xFF), UInt8(c & 0xFF), 255] }
-        return CIImage(bitmapData: Data(bytes), bytesPerRow: hex.count * 4,
-                       size: CGSize(width: hex.count, height: 1), format: .RGBA8,
-                       colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
     }
 }

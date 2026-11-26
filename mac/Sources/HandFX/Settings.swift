@@ -10,6 +10,16 @@ enum Settings {
         set { defaults.set(newValue, forKey: "effect") }
     }
 
+    static var palette: String? {
+        get { defaults.string(forKey: "palette") }
+        set { defaults.set(newValue, forKey: "palette") }
+    }
+
+    static var blocksAcross: Int {
+        get { defaults.integer(forKey: "blocksAcross") }
+        set { defaults.set(newValue, forKey: "blocksAcross") }
+    }
+
     static func bool(_ key: String, or fallback: Bool) -> Bool {
         defaults.object(forKey: key) as? Bool ?? fallback
     }

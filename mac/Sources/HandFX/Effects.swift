@@ -12,7 +12,6 @@ struct Effects {
     let all: [(name: String, apply: Apply)]
 
     init(context: CIContext) {
-        let pixelArt = PixelArt()
         all = [
             ("pixel art", { image, rect, _ in pixelArt(image, rect) }),
             ("pixelate", { image, rect, _ in

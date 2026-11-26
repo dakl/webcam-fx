@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CoreImage
 import HandTracking
+import PixelGrid
 
 // HandFX: make a rectangle with the thumbs and index fingers of both hands; the picture inside
 // gets an effect. The blue hand's pinch switches to the next effect; pinch and hold it to open
@@ -24,6 +25,7 @@ func option(_ name: String) -> String? {
 }
 
 let ciContext = CIContext()
+let pixelArt = PixelArt(context: ciContext)  // shared: its palette and block size are settings
 let effects = Effects(context: ciContext)
 let virtualCamera = VirtualCamera()
 
@@ -114,6 +116,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         self.view = view
         super.init()
         if let saved = effects.all.firstIndex(where: { $0.name == Settings.effect }) { menu.selected = saved }
+        if let saved = Palette.all.first(where: { $0.name == Settings.palette }) { pixelArt.palette = saved }
+        if PixelArt.blockChoices.contains(Settings.blocksAcross) { pixelArt.blocksAcross = Settings.blocksAcross }
         publishControls()
         let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external],
                                                        mediaType: .video, position: .unspecified).devices
@@ -141,7 +145,10 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     /// The settings as of the last change, for the toolbar. It reads this copy and never waits for
     /// the camera queue, which can be busy for a while with a slow effect.
-    struct Controls { var selected = 0, blackOutside = false, gesturesOn = true, showHelp = true }
+    struct Controls {
+        var selected = 0, blackOutside = false, gesturesOn = true, showHelp = true
+        var palette = 0, blocksAcross = 64  // pixel art
+    }
     var controls: Controls { controlsLock.withLock { published } }
     private var published = Controls()
     private let controlsLock = NSLock()
@@ -149,17 +156,21 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     /// Call on the camera queue after changing a setting.
     private func publishControls() {
         let c = Controls(selected: menu.selected, blackOutside: blackOutside, gesturesOn: gesturesOn,
-                         showHelp: showHelp)
+                         showHelp: showHelp, palette: Palette.all.firstIndex(of: pixelArt.palette) ?? 0,
+                         blocksAcross: pixelArt.blocksAcross)
         let changed = controlsLock.withLock {
             defer { published = c }
-            return (published.selected, published.blackOutside, published.gesturesOn, published.showHelp)
-                != (c.selected, c.blackOutside, c.gesturesOn, c.showHelp)
+            return (published.selected, published.blackOutside, published.gesturesOn, published.showHelp,
+                    published.palette, published.blocksAcross)
+                != (c.selected, c.blackOutside, c.gesturesOn, c.showHelp, c.palette, c.blocksAcross)
         }
         guard changed else { return }  // this runs every frame; save only a change
         Settings.effect = effects.all[c.selected].name
         Settings.set("blackOutside", c.blackOutside)
         Settings.set("gesturesOn", c.gesturesOn)
         Settings.set("showHelp", c.showHelp)
+        Settings.palette = Palette.all[c.palette].name
+        Settings.blocksAcross = c.blocksAcross
     }
 
     /// A frame drawn with the mouse, in image pixels; nil removes it.
@@ -172,6 +183,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     func setBlackOutside(_ on: Bool) { change { $0.blackOutside = on } }
     func setShowHelp(_ on: Bool) { change { $0.showHelp = on } }
+    func setPalette(_ index: Int) { change { _ in pixelArt.palette = Palette.all[index] } }
+    func setBlocksAcross(_ blocks: Int) { change { _ in pixelArt.blocksAcross = blocks } }
     func setGestures(_ on: Bool) { change { $0.applyGestures(on) } }
 
     private func change(_ apply: @escaping (Camera) -> Void) {
@@ -277,7 +290,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                 flash = FlashHelp(text: "black \(blackOutside ? "on" : "off")", at: at, started: now)
             }
             return HandHelp(points: hand.landmarks.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) },
-                            colour: isEffects ? Palette.effects : Palette.black,
+                            colour: isEffects ? HelpColours.effects : HelpColours.black,
                             action: isEffects ? "next effect" : "black outside", gapCm: gap, pinched: closed,
                             pinchedText: isEffects ? (menu.isOpen ? "" : "let go: next, hold: list")
                                                    : "black outside - open to pinch again")

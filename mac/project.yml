@@ -25,6 +25,8 @@ targets:
     dependencies:
       - package: HandTracking
         product: HandTracking
+      - package: HandTracking
+        product: PixelGrid
       - target: HandFXCamera
         embed: true
       - framework: Vendor/onnxruntime/lib/libonnxruntime.1.dylib  # from fetch-onnxruntime.sh
