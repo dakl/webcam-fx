@@ -109,7 +109,7 @@ final class VirtualCamera: NSObject, OSSystemExtensionRequestDelegate {
         guard now - lastLookup > 1 else { return nil }
         lastLookup = now
         guard let device = devices().first(where: { name(of: $0) == Self.cameraName }),
-              let sink = streams(of: device).first(where: { direction(of: $0) == 1 }) else { return nil }  // 1: input
+              let sink = streams(of: device).first(where: { direction(of: $0) == 0 }) else { return nil }  // 0: into the device; 1 is what cameras output
         var unmanaged: Unmanaged<CMSimpleQueue>?
         let copied = CMIOStreamCopyBufferQueue(sink, { _, _, _ in }, nil, &unmanaged)
         guard copied == 0, let q = unmanaged?.takeRetainedValue() else {
