@@ -22,6 +22,9 @@ targets:
     platform: macOS
     sources:
       - Sources/HandFX
+      - path: Vendor/onnxruntime/notices  # ONNX Runtime's MIT licence and third-party notices
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: HandTracking
         product: HandTracking

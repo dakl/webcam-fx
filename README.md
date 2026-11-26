@@ -230,3 +230,8 @@ of a name) to select another camera.
 1. In System Settings > Accessibility > Zoom, switch on "Use scroll gesture
    with modifier keys to zoom", with Control.
 2. Give your terminal app Accessibility permission.
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). The hand models, ONNX Runtime and the palettes
+come from others: see [THIRD_PARTY.md](THIRD_PARTY.md).
