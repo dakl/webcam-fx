@@ -15,3 +15,4 @@ mac/build/
 mac/App/
 mac/CameraExtension/Info.plist
 mac/CameraExtension/*.entitlements
+mac/Vendor/

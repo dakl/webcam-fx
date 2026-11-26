@@ -1,5 +1,5 @@
 module COnnxRuntime [system] {
-    header "shim.h"
+    header "../../Vendor/onnxruntime/include/onnxruntime_c_api.h"
     link "onnxruntime"
     export *
 }

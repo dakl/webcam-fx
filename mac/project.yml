@@ -1,5 +1,5 @@
-# The HandFX Mac app with its camera extension. Generate the Xcode project with `make-app.sh`;
-# HandFX.xcodeproj is generated, not kept in git.
+# The HandFX Mac app with its camera extension. make-app.sh (this Mac) and make-release.sh (a
+# notarised DMG) generate the Xcode project from this file; HandFX.xcodeproj is not kept in git.
 name: HandFX
 options:
   bundleIdPrefix: se.dakl
@@ -9,8 +9,10 @@ settings:
   base:
     DEVELOPMENT_TEAM: ${TEAM_ID}
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.1"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.2"
+    CURRENT_PROJECT_VERSION: "2"
+    ENABLE_HARDENED_RUNTIME: YES  # required for notarisation
+    ARCHS: arm64  # the NuGet ONNX Runtime has no Intel build
 packages:
   HandTracking:
     path: .
@@ -25,23 +27,29 @@ targets:
         product: HandTracking
       - target: HandFXCamera
         embed: true
+      - framework: Vendor/onnxruntime/lib/libonnxruntime.1.dylib  # from fetch-onnxruntime.sh
+        embed: true
+        codeSign: true
     entitlements:
       path: App/HandFX.entitlements
       properties:
         com.apple.developer.system-extension.install: true
+        com.apple.security.device.camera: true  # the hardened runtime blocks the camera without it
         com.apple.security.application-groups: [$(TeamIdentifierPrefix)se.dakl.handfx]
     info:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: HandFX
         CFBundlePackageType: APPL
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.video
         NSCameraUsageDescription: HandFX tracks your hands in the camera picture to control the effects.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: se.dakl.handfx
         PRODUCT_NAME: HandFX
-        ENABLE_HARDENED_RUNTIME: NO  # ONNX Runtime comes from Homebrew, signed by someone else
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         SWIFT_VERSION: "5.10"
   HandFXCamera:
     type: system-extension
@@ -58,6 +66,8 @@ targets:
       properties:
         CFBundleDisplayName: HandFX Camera
         CFBundlePackageType: SYSX  # marks the bundle as a system extension
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSSystemExtensionUsageDescription: Adds the HandFX camera, which shows the HandFX app's picture with its effects in meeting apps.
         CMIOExtension:
           CMIOExtensionMachServiceName: $(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)

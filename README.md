@@ -60,14 +60,22 @@ pinch picker and black-outside, with the same on-screen help. The blue hand
 picks effects, the pink hand turns black-outside on or off. As HandFX.app it
 is also a camera, "HandFX", for meeting apps.
 
+HandFX.app runs on Apple Silicon Macs with macOS 14 or later. Download the
+DMG from the GitHub releases, or build it:
+
 ```bash
-brew install onnxruntime xcodegen
+brew install xcodegen
+cd mac && ./fetch-onnxruntime.sh        # ONNX Runtime from Microsoft's NuGet package
 cd mac && swift run -c release HandFX   # window only
 cd mac && ./make-app.sh                 # HandFX.app with the camera, into /Applications
+cd mac && ./make-release.sh             # notarised build/HandFX-<version>.dmg for other Macs
 ```
 
-`make-app.sh` signs with the first team in Xcode > Settings > Accounts. The
-first time, open HandFX.app, switch on HandFX Camera in System Settings >
+The app carries ONNX Runtime inside it. `make-app.sh` and `make-release.sh`
+sign with the first team in Xcode > Settings > Accounts; `make-release.sh`
+signs with Developer ID and notarises with the keychain profile
+`handfx-notary` (see the script for the one-time `notarytool store-credentials`).
+The first time, open HandFX.app, switch on HandFX Camera in System Settings >
 General > Login Items & Extensions > Camera Extensions, and allow camera
 access. Then pick the "HandFX" camera in your meeting app; it shows grey while
 HandFX.app is closed.

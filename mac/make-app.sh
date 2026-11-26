@@ -3,6 +3,7 @@
 # Signs with the first team in your Xcode accounts; Xcode creates the certificate if needed.
 set -euo pipefail
 cd "${0:A:h}"
+./fetch-onnxruntime.sh
 TEAM_ID=$(defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier | awk '/teamID = / {gsub(/[";]/, "", $3); print $3; exit}')
 [[ -n "$TEAM_ID" ]] || { echo "No team in Xcode > Settings > Accounts"; exit 1; }
 TEAM_ID=$TEAM_ID xcodegen generate --quiet
