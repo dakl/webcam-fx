@@ -51,5 +51,9 @@ echo "Signed: $DMG"
 [[ "${1:-}" == --no-notarise ]] && exit 0
 xcrun notarytool submit $DMG --keychain-profile $PROFILE --wait
 xcrun stapler staple $DMG
-spctl --assess --type open --context context:primary-signature --verbose $DMG
+# The DMG has no signature of its own (the Developer ID certificate is cloud-managed), so check the app in it.
+mnt=$(mktemp -d)
+hdiutil attach -quiet -nobrowse -mountpoint $mnt $DMG
+spctl --assess --type execute --verbose $mnt/HandFX.app
+hdiutil detach -quiet $mnt
 echo "Notarised: $DMG"
