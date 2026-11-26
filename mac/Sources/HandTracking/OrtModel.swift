@@ -14,7 +14,8 @@ private func check(_ status: OpaquePointer?) throws {
     throw OrtError(description: message)
 }
 
-private let environment: OpaquePointer = {
+// ONNX Runtime documents its environment as safe to share between threads.
+nonisolated(unsafe) private let environment: OpaquePointer = {
     var env: OpaquePointer?
     try! check(api.CreateEnv(ORT_LOGGING_LEVEL_WARNING, "handfx", &env))
     return env!
@@ -35,7 +36,7 @@ final class OrtModel {
         if coreML {
             let keys = cStrings(["ModelFormat", "MLComputeUnits"])
             let values = cStrings(["MLProgram", "ALL"])
-            defer { (keys + values).forEach { free(UnsafeMutablePointer(mutating: $0)) } }
+            defer { for s in keys + values { free(UnsafeMutablePointer(mutating: s)) } }
             try check(api.SessionOptionsAppendExecutionProvider(options, "CoreML", keys, values, keys.count))
         }
         var session: OpaquePointer?
@@ -49,7 +50,7 @@ final class OrtModel {
     }
 
     deinit {
-        (inputNames + outputNames).forEach { free(UnsafeMutablePointer(mutating: $0)) }
+        for s in inputNames + outputNames { free(UnsafeMutablePointer(mutating: s)) }
         api.ReleaseMemoryInfo(memory)
         api.ReleaseSession(session)
     }
@@ -58,13 +59,15 @@ final class OrtModel {
     func run(_ input: inout [Float], shape: [Int64]) throws -> [[Float]] {
         try input.withUnsafeMutableBytes { bytes in
             var value: OpaquePointer?
-            try check(api.CreateTensorWithDataAsOrtValue(memory, bytes.baseAddress, bytes.count, shape, shape.count,
-                                                         ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &value))
+            try check(
+                api.CreateTensorWithDataAsOrtValue(
+                    memory, bytes.baseAddress, bytes.count, shape, shape.count,
+                    ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &value))
             defer { api.ReleaseValue(value) }
             var outputs = [OpaquePointer?](repeating: nil, count: outputNames.count)
             let inputs: [OpaquePointer?] = [value]
             try check(api.Run(session, nil, inputNames, inputs, 1, outputNames, outputNames.count, &outputs))
-            defer { outputs.forEach { api.ReleaseValue($0) } }
+            defer { for value in outputs { api.ReleaseValue(value) } }
             return try outputs.map { try Self.floats($0) }
         }
     }

@@ -1,5 +1,5 @@
-import AppKit
 import AVFoundation
+import AppKit
 import CoreImage
 import HandTracking
 import PixelGrid
@@ -24,17 +24,20 @@ func option(_ name: String) -> String? {
     args.firstIndex(of: name).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
 }
 
+// Used from the camera queue as well as the main thread. CIContext is thread-safe; the effects are
+// fixed after start; pixelArt, the tracker and virtualCamera's frame sending run only on the camera
+// queue, and virtualCamera guards its status with a lock.
 let ciContext = CIContext()
-let pixelArt = PixelArt(context: ciContext)  // shared: its palette and block size are settings
-let effects = Effects(context: ciContext)
-let virtualCamera = VirtualCamera()
+nonisolated(unsafe) let pixelArt = PixelArt(context: ciContext)  // shared: its palette and block size are settings
+nonisolated(unsafe) let effects = Effects(context: ciContext)
+nonisolated(unsafe) let virtualCamera = VirtualCamera()
 
 if let i = args.firstIndex(of: "--effects"), i + 2 < args.count {
     renderEffects(picture: args[i + 1], into: args[i + 2])
     exit(0)
 }
 
-let tracker: HandTracker
+nonisolated(unsafe) let tracker: HandTracker
 do {
     tracker = try HandTracker(coreML: !args.contains("--cpu"))
 } catch {
@@ -57,9 +60,10 @@ func checkPicture(_ path: String) {
     }
     let (w, h) = (cg.width, cg.height)
     var pixels = [UInt8](repeating: 0, count: w * h * 4)
-    let ctx = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                        space: CGColorSpaceCreateDeviceRGB(),
-                        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+    let ctx = CGContext(
+        data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
     ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))  // BGRA in memory
     let hands = pixels.withUnsafeBufferPointer { buf in
         try! tracker.detectOnly(PixelImage(base: buf.baseAddress!, width: w, height: h, bytesPerRow: w * 4))
@@ -119,11 +123,17 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         if let saved = Palette.all.first(where: { $0.name == Settings.palette }) { pixelArt.palette = saved }
         if PixelArt.blockChoices.contains(Settings.blocksAcross) { pixelArt.blocksAcross = Settings.blocksAcross }
         publishControls()
-        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external],
-                                                       mediaType: .video, position: .unspecified).devices
+        let devices = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external],
+            mediaType: .video, position: .unspecified
+        ).devices
         guard let device = devices.first(where: { $0.localizedName.localizedCaseInsensitiveContains(name) }) else {
-            throw NSError(domain: "HandFX", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                "No camera matches \"\(name)\". Cameras: \(devices.map(\.localizedName).joined(separator: ", "))"])
+            throw NSError(
+                domain: "HandFX", code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "No camera matches \"\(name)\". Cameras: \(devices.map(\.localizedName).joined(separator: ", "))"
+                ])
         }
         print("Camera: \(device.localizedName)")
         session.sessionPreset = .hd1280x720
@@ -155,13 +165,16 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     /// Call on the camera queue after changing a setting.
     private func publishControls() {
-        let c = Controls(selected: menu.selected, blackOutside: blackOutside, gesturesOn: gesturesOn,
-                         showHelp: showHelp, palette: Palette.all.firstIndex(of: pixelArt.palette) ?? 0,
-                         blocksAcross: pixelArt.blocksAcross)
+        let c = Controls(
+            selected: menu.selected, blackOutside: blackOutside, gesturesOn: gesturesOn,
+            showHelp: showHelp, palette: Palette.all.firstIndex(of: pixelArt.palette) ?? 0,
+            blocksAcross: pixelArt.blocksAcross)
         let changed = controlsLock.withLock {
             defer { published = c }
-            return (published.selected, published.blackOutside, published.gesturesOn, published.showHelp,
-                    published.palette, published.blocksAcross)
+            return (
+                published.selected, published.blackOutside, published.gesturesOn, published.showHelp,
+                published.palette, published.blocksAcross
+            )
                 != (c.selected, c.blackOutside, c.gesturesOn, c.showHelp, c.palette, c.blocksAcross)
         }
         guard changed else { return }  // this runs every frame; save only a change
@@ -222,17 +235,20 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             .appendingPathComponent("../../captures").standardized
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let name = "frame-\(Int(Date().timeIntervalSince1970 * 1000)).png"
-        try? ciContext.writePNGRepresentation(of: picture, to: folder.appendingPathComponent(name), format: .RGBA8,
-                                              colorSpace: CGColorSpaceCreateDeviceRGB())
+        try? ciContext.writePNGRepresentation(
+            of: picture, to: folder.appendingPathComponent(name), format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB())
         print("saved captures/\(name)")
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
-        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
-        let image = PixelImage(base: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self),
-                               width: width, height: height, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer))
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        let image = PixelImage(
+            base: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self),
+            width: width, height: height, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer))
         let raw = gesturesOn ? (try? tracker.process(image)) ?? [] : []
         CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
         let time = CMSampleBufferGetPresentationTimeStamp(sample).seconds
@@ -254,14 +270,16 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         last = now
         var scene = Scene(image: cg, hands: help, flash: flash, showHelp: showHelp)
         if menu.isOpen {
-            scene.menu = MenuHelp(names: effects.all.map(\.name), selected: menu.selected, anchor: menu.startIndex,
-                                  at: menuAt, stepPx: CGFloat(PinchMenu.step) * CGFloat(height))
+            scene.menu = MenuHelp(
+                names: effects.all.map(\.name), selected: menu.selected, anchor: menu.startIndex,
+                at: menuAt, stepPx: CGFloat(PinchMenu.step) * CGFloat(height))
             scene.hint = "Move the pinch down or up to pick, open your fingers to keep it"
         } else {
             scene.hint = gesturesOn ? hint(handsSeen: hands.count, frameOK: box != nil) : ""
         }
-        scene.status = String(format: "%.0f fps · %@ · camera: %@", fps,
-                              gesturesOn ? "hands: \(hands.count)" : "gestures off", virtualCamera.status)
+        scene.status = String(
+            format: "%.0f fps · %@ · camera: %@", fps,
+            gesturesOn ? "hands: \(hands.count)" : "gestures off", virtualCamera.status)
         DispatchQueue.main.async { [view] in
             view.scene = scene
             view.needsDisplay = true
@@ -289,11 +307,13 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                 blackOutside.toggle()
                 flash = FlashHelp(text: "black \(blackOutside ? "on" : "off")", at: at, started: now)
             }
-            return HandHelp(points: hand.landmarks.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) },
-                            colour: isEffects ? HelpColours.effects : HelpColours.black,
-                            action: isEffects ? "next effect" : "black outside", gapCm: gap, pinched: closed,
-                            pinchedText: isEffects ? (menu.isOpen ? "" : "let go: next, hold: list")
-                                                   : "black outside - open to pinch again")
+            return HandHelp(
+                points: hand.landmarks.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) },
+                colour: isEffects ? HelpColours.effects : HelpColours.black,
+                action: isEffects ? "next effect" : "black outside", gapCm: gap, pinched: closed,
+                pinchedText: isEffects
+                    ? (menu.isOpen ? "" : "let go: next, hold: list")
+                    : "black outside - open to pinch again")
         }
     }
 
@@ -309,8 +329,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
-let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
-                      styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+let window = NSWindow(
+    contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
+    styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
 window.title = "HandFX"
 let frameView = FrameView()
 window.center()

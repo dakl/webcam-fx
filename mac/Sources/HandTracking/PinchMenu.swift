@@ -67,7 +67,8 @@ public struct FingerFrame {
             let closing = hands.contains { Pinch.gapCm($0) < Self.freezeBelowCm }
             if !(closing && box != nil) {
                 let tips = hands.flatMap { [$0.landmarks[4], $0.landmarks[8]] }
-                let xs = tips.map(\.x), ys = tips.map(\.y)
+                let xs = tips.map(\.x)
+                let ys = tips.map(\.y)
                 let new = SIMD4(xs.min()!, ys.min()!, xs.max()!, ys.max()!)
                 box = box.map { Self.smoothing * $0 + (1 - Self.smoothing) * new } ?? new
             }

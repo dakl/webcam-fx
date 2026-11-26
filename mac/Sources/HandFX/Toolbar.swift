@@ -26,10 +26,12 @@ final class Toolbar: NSView {
         effect.addItems(withTitles: effects.all.map(\.name))
         palette.addItems(withTitles: Palette.all.map(\.name))
         blocks.addItems(withTitles: PixelArt.blockChoices.map { "\($0) blocks" })
-        for (control, action) in [(effect as NSControl, #selector(pickEffect)), (palette, #selector(pickPalette)),
-                                  (blocks, #selector(pickBlocks)), (black, #selector(setBlack)),
-                                  (gestures, #selector(setGestures)), (help, #selector(setHelp)),
-                                  (lock, #selector(setLock)), (removeFrame, #selector(remove))] {
+        for (control, action) in [
+            (effect as NSControl, #selector(pickEffect)), (palette, #selector(pickPalette)),
+            (blocks, #selector(pickBlocks)), (black, #selector(setBlack)),
+            (gestures, #selector(setGestures)), (help, #selector(setHelp)),
+            (lock, #selector(setLock)), (removeFrame, #selector(remove)),
+        ] {
             control.target = self
             control.action = action
             control.refusesFirstResponder = true  // keys keep going to the picture
@@ -44,8 +46,10 @@ final class Toolbar: NSView {
         }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
-        let stack = NSStackView(views: [NSTextField(labelWithString: "Effect"), effect, palette, blocks, black, gestures, help,
-                                        lock, removeFrame, tip, spacer, status])
+        let stack = NSStackView(views: [
+            NSTextField(labelWithString: "Effect"), effect, palette, blocks, black, gestures, help,
+            lock, removeFrame, tip, spacer, status,
+        ])
         stack.spacing = 16
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false

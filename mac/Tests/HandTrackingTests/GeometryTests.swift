@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import HandTracking
 
 final class GeometryTests: XCTestCase {
@@ -65,8 +66,9 @@ final class PinchGapTests: XCTestCase {
         var world = Array(repeating: SIMD3<Float>(0, 0, 0), count: 21)
         world[4] = [0.005, 0, 0.03]  // thumb tip: 0.5 cm across, 3 cm nearer the camera
         world[8] = [0, 0, -0.02]  // index tip
-        let hand = Hand(landmarks: world, world: world, presence: 1, rightScore: 0,
-                        rect: RotatedRect(cx: 0, cy: 0, w: 1, h: 1, angle: 0))
+        let hand = Hand(
+            landmarks: world, world: world, presence: 1, rightScore: 0,
+            rect: RotatedRect(cx: 0, cy: 0, w: 1, h: 1, angle: 0))
 
         XCTAssertEqual(Pinch.gapCm(hand), 0.5, accuracy: 1e-4)
     }

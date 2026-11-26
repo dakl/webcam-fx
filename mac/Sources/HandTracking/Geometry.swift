@@ -17,7 +17,8 @@ public struct RotatedRect: Equatable {
     /// The axis-aligned box around the rect: xmin, ymin, xmax, ymax.
     public var bounds: SIMD4<Float> {
         let corners = [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)].map { point(u: Float($0.0), v: Float($0.1)) }
-        let xs = corners.map(\.x), ys = corners.map(\.y)
+        let xs = corners.map(\.x)
+        let ys = corners.map(\.y)
         return [xs.min()!, ys.min()!, xs.max()!, ys.max()!]
     }
 }
@@ -41,15 +42,17 @@ func uprightAngle(from: SIMD2<Float>, to: SIMD2<Float>) -> Float {
 /// MediaPipe's RectTransformation with no x shift and a square from the long side.
 func transform(_ r: RotatedRect, scale: Float, shiftY: Float) -> RotatedRect {
     let side = max(r.w, r.h) * scale
-    return RotatedRect(cx: r.cx - r.h * shiftY * sin(r.angle), cy: r.cy + r.h * shiftY * cos(r.angle),
-                       w: side, h: side, angle: r.angle)
+    return RotatedRect(
+        cx: r.cx - r.h * shiftY * sin(r.angle), cy: r.cy + r.h * shiftY * cos(r.angle),
+        w: side, h: side, angle: r.angle)
 }
 
 /// The landmark model's crop for a palm: turned upright from wrist to middle finger, then enlarged.
 public func rect(for palm: Palm) -> RotatedRect {
     let b = palm.box
-    let r = RotatedRect(cx: (b.x + b.z) / 2, cy: (b.y + b.w) / 2, w: b.z - b.x, h: b.w - b.y,
-                        angle: uprightAngle(from: palm.keypoints[0], to: palm.keypoints[2]))
+    let r = RotatedRect(
+        cx: (b.x + b.z) / 2, cy: (b.y + b.w) / 2, w: b.z - b.x, h: b.w - b.y,
+        angle: uprightAngle(from: palm.keypoints[0], to: palm.keypoints[2]))
     return transform(r, scale: 2.6, shiftY: -0.5)
 }
 
@@ -72,8 +75,9 @@ public func rect(forLandmarks lm: [SIMD3<Float>]) -> RotatedRect {
     let tHi = turned.reduce(turned[0]) { pointwiseMax($0, $1) }
     let mid = (tLo + tHi) / 2
     let (c2, s2) = (cos(angle), sin(angle))
-    let r = RotatedRect(cx: centre.x + c2 * mid.x - s2 * mid.y, cy: centre.y + s2 * mid.x + c2 * mid.y,
-                        w: tHi.x - tLo.x, h: tHi.y - tLo.y, angle: angle)
+    let r = RotatedRect(
+        cx: centre.x + c2 * mid.x - s2 * mid.y, cy: centre.y + s2 * mid.x + c2 * mid.y,
+        w: tHi.x - tLo.x, h: tHi.y - tLo.y, angle: angle)
     return transform(r, scale: 2.0, shiftY: -0.1)
 }
 

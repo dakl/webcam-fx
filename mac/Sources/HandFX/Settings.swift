@@ -2,7 +2,7 @@ import Foundation
 
 /// What HandFX keeps between launches, in its UserDefaults.
 enum Settings {
-    private static let defaults = UserDefaults.standard
+    private static var defaults: UserDefaults { .standard }  // thread-safe, per Apple
 
     /// The chosen effect, by name, so a new effect in the list does not change it.
     static var effect: String? {

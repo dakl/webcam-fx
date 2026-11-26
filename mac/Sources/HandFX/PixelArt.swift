@@ -29,12 +29,15 @@ final class PixelArt {
 
     func callAsFunction(_ image: CIImage, _ rect: CGRect) -> CIImage {
         let block = max(rect.width / CGFloat(blocksAcross), 4)
-        let cols = Int((rect.width / block).rounded(.up)), rows = Int((rect.height / block).rounded(.up))
+        let cols = Int((rect.width / block).rounded(.up))
+        let rows = Int((rect.height / block).rounded(.up))
         guard cols > 0, rows > 0 else { return image }
 
-        let boosted = image.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05,
-        ])
+        let boosted = image.applyingFilter(
+            "CIColorControls",
+            parameters: [
+                kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05,
+            ])
         let pixels = shrink(boosted, rect, block, cols, rows, format: .RGBA8, bytesPerPixel: 4)
         let colours = stride(from: 0, to: pixels.count, by: 4).map {
             SIMD3(Float(pixels[$0]), Float(pixels[$0 + 1]), Float(pixels[$0 + 2]))
@@ -61,25 +64,30 @@ final class PixelArt {
                 (out[i * 4], out[i * 4 + 1], out[i * 4 + 2]) = (UInt8(colour.x), UInt8(colour.y), UInt8(colour.z))
             }
         }
-        let small = CIImage(bitmapData: Data(out), bytesPerRow: cols * 4, size: CGSize(width: cols, height: rows),
-                            format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        let small = CIImage(
+            bitmapData: Data(out), bytesPerRow: cols * 4, size: CGSize(width: cols, height: rows),
+            format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
         // Blow each pixel up to one sharp block; the bitmap's first row (the top) stays on top.
         return small.samplingNearest()
-            .transformed(by: CGAffineTransform(scaleX: block, y: block)
-                .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))
+            .transformed(
+                by: CGAffineTransform(scaleX: block, y: block)
+                    .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))
     }
 
     /// The frame averaged down to `cols` x `rows` pixels (Lanczos, so each block is a true average),
     /// read out top row first.
-    private func shrink(_ image: CIImage, _ rect: CGRect, _ block: CGFloat, _ cols: Int, _ rows: Int,
-                        format: CIFormat, bytesPerPixel: Int) -> [UInt8] {
+    private func shrink(
+        _ image: CIImage, _ rect: CGRect, _ block: CGFloat, _ cols: Int, _ rows: Int,
+        format: CIFormat, bytesPerPixel: Int
+    ) -> [UInt8] {
         let scaled = image.clampedToExtent().cropped(to: rect)
             .transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
             .applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: 1 / block, kCIInputAspectRatioKey: 1])
         var bytes = [UInt8](repeating: 0, count: cols * rows * bytesPerPixel)
-        context.render(scaled, toBitmap: &bytes, rowBytes: cols * bytesPerPixel,
-                       bounds: CGRect(x: 0, y: 0, width: cols, height: rows), format: format,
-                       colorSpace: format == .L8 ? nil : CGColorSpace(name: CGColorSpace.sRGB))
+        context.render(
+            scaled, toBitmap: &bytes, rowBytes: cols * bytesPerPixel,
+            bounds: CGRect(x: 0, y: 0, width: cols, height: rows), format: format,
+            colorSpace: format == .L8 ? nil : CGColorSpace(name: CGColorSpace.sRGB))
         return bytes
     }
 
@@ -89,7 +97,8 @@ final class PixelArt {
         try? VNImageRequestHandler(ciImage: crop).perform([request])
         guard let buffer = request.results?.first?.pixelBuffer else { return nil }
         let mask = CIImage(cvPixelBuffer: buffer)
-        return mask.transformed(by: CGAffineTransform(scaleX: rect.width / mask.extent.width, y: rect.height / mask.extent.height)
-            .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))
+        return mask.transformed(
+            by: CGAffineTransform(scaleX: rect.width / mask.extent.width, y: rect.height / mask.extent.height)
+                .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY)))
     }
 }

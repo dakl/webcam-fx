@@ -31,10 +31,12 @@ public final class HandTracker {
         let folder = models ?? Bundle.module.url(forResource: "Models", withExtension: nil)!
         // The detector stays on the CPU: Core ML's MLProgram format cannot read one of its
         // convolutions, and the older format is slower than the CPU for this model.
-        detector = try OrtModel(url: folder.appendingPathComponent("hand_detector.onnx"), input: "input_1",
-                                outputs: ["Identity", "Identity_1"], coreML: false)
-        landmarker = try OrtModel(url: folder.appendingPathComponent("hand_landmarks_detector.onnx"), input: "input_1",
-                                  outputs: ["Identity", "Identity_1", "Identity_2", "Identity_3"], coreML: coreML)
+        detector = try OrtModel(
+            url: folder.appendingPathComponent("hand_detector.onnx"), input: "input_1",
+            outputs: ["Identity", "Identity_1"], coreML: false)
+        landmarker = try OrtModel(
+            url: folder.appendingPathComponent("hand_landmarks_detector.onnx"), input: "input_1",
+            outputs: ["Identity", "Identity_1", "Identity_2", "Identity_3"], coreML: coreML)
     }
 
     /// Track hands in one video frame.
@@ -65,7 +67,8 @@ public final class HandTracker {
     /// Palms in image pixels, best first.
     public func detect(_ image: PixelImage) throws -> [Palm] {
         let side = Float(max(image.width, image.height))
-        let padX = (side - Float(image.width)) / 2, padY = (side - Float(image.height)) / 2
+        let padX = (side - Float(image.width)) / 2
+        let padY = (side - Float(image.height)) / 2
         let k = side / Float(PalmDecoder.inputSize)
         image.sample(into: &detInput, size: PalmDecoder.inputSize, map: (k, 0, -padX, 0, k, -padY))
         let s = Int64(PalmDecoder.inputSize)
@@ -83,8 +86,10 @@ public final class HandTracker {
         let n = Float(Self.landmarkSize)
         let (c, s) = (cos(r.angle), sin(r.angle))
         // output pixel (u, v) -> rect units (u/n - 0.5, v/n - 0.5) -> image
-        let map = (a: c * r.w / n, b: -s * r.h / n, c: r.cx - (c * r.w - s * r.h) / 2,
-                   d: s * r.w / n, e: c * r.h / n, f: r.cy - (s * r.w + c * r.h) / 2)
+        let map = (
+            a: c * r.w / n, b: -s * r.h / n, c: r.cx - (c * r.w - s * r.h) / 2,
+            d: s * r.w / n, e: c * r.h / n, f: r.cy - (s * r.w + c * r.h) / 2
+        )
         image.sample(into: &lmInput, size: Self.landmarkSize, map: map)
         let s64 = Int64(Self.landmarkSize)
         let out = try landmarker.run(&lmInput, shape: [1, s64, s64, 3])

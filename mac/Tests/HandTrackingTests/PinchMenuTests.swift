@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import HandTracking
 
 final class PinchMenuTests: XCTestCase {
@@ -55,8 +56,9 @@ final class FingerFrameTests: XCTestCase {
         points[8] = [tips.1.x, tips.1.y, 0]
         var world = Array(repeating: SIMD3<Float>(0, 0, 0), count: 21)
         world[4] = [gapCm / 100, 0, 0]
-        return Hand(landmarks: points, world: world, presence: 1, rightScore: 0,
-                    rect: RotatedRect(cx: 0, cy: 0, w: 1, h: 1, angle: 0))
+        return Hand(
+            landmarks: points, world: world, presence: 1, rightScore: 0,
+            rect: RotatedRect(cx: 0, cy: 0, w: 1, h: 1, angle: 0))
     }
 
     func testTwoOpenHandsMakeTheBoxAroundTheirTips() {

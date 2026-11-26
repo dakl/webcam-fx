@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import HandTracking
 
 final class OneEuroTests: XCTestCase {

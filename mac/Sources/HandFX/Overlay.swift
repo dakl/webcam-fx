@@ -47,8 +47,10 @@ enum HelpColours {
 }
 
 private let flashSeconds = 0.7
-private let bones = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8), (5, 9), (9, 10), (10, 11),
-                     (11, 12), (9, 13), (13, 14), (14, 15), (15, 16), (13, 17), (0, 17), (17, 18), (18, 19), (19, 20)]
+private let bones = [
+    (0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8), (5, 9), (9, 10), (10, 11),
+    (11, 12), (9, 13), (13, 14), (14, 15), (15, 16), (13, 17), (0, 17), (17, 18), (18, 19), (19, 20),
+]
 
 /// The window: the picture mirrored, like a meeting app's preview, and the help on top.
 final class FrameView: NSView {
@@ -101,10 +103,15 @@ final class FrameView: NSView {
     /// What a press at picture point `p` would do: near an edge resizes, inside moves, outside draws.
     private func drag(at p: CGPoint) -> Drag {
         guard let b = drawnBox else { return .draw(from: p) }
-        let reach = Float(Self.grab / max(scale, 0.01)), x = Float(p.x), y = Float(p.y)
-        let alongX = x > b.x - reach && x < b.z + reach, alongY = y > b.y - reach && y < b.w + reach
-        let left = alongY && abs(x - b.x) < reach, right = alongY && abs(x - b.z) < reach
-        let top = alongX && abs(y - b.y) < reach, bottom = alongX && abs(y - b.w) < reach
+        let reach = Float(Self.grab / max(scale, 0.01))
+        let x = Float(p.x)
+        let y = Float(p.y)
+        let alongX = x > b.x - reach && x < b.z + reach
+        let alongY = y > b.y - reach && y < b.w + reach
+        let left = alongY && abs(x - b.x) < reach
+        let right = alongY && abs(x - b.z) < reach
+        let top = alongX && abs(y - b.y) < reach
+        let bottom = alongX && abs(y - b.w) < reach
         if left || right || top || bottom {
             return .resize(from: p, box: b, left: left, right: right, top: top, bottom: bottom)
         }
@@ -128,7 +135,8 @@ final class FrameView: NSView {
             let d = SIMD2(Float(p.x - from.x), Float(p.y - from.y))
             drawnBox = box + SIMD4(d.x, d.y, d.x, d.y)
         case .resize(let from, var box, let left, let right, let top, let bottom):
-            let dx = Float(p.x - from.x), dy = Float(p.y - from.y)
+            let dx = Float(p.x - from.x)
+            let dy = Float(p.y - from.y)
             if left { box.x += dx }
             if right { box.z += dx }
             if top { box.y += dy }
@@ -151,8 +159,10 @@ final class FrameView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
-                                       owner: self))
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+                owner: self))
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -161,21 +171,28 @@ final class FrameView: NSView {
         case .draw: NSCursor.crosshair.set()
         case .move: NSCursor.openHand.set()
         case .resize(_, _, let l, let r, let t, let b):
-            ((l || r) && !(t || b) ? NSCursor.resizeLeftRight : (t || b) && !(l || r) ? NSCursor.resizeUpDown
-                : NSCursor.crosshair).set()
+            ((l || r) && !(t || b)
+                ? NSCursor.resizeLeftRight
+                : (t || b) && !(l || r)
+                    ? NSCursor.resizeUpDown
+                    : NSCursor.crosshair).set()
         }
     }
 
     /// Square handles on the corners and edge middles of the drawn frame.
     private func drawHandles(_ b: SIMD4<Float>) {
-        let a = view(CGPoint(x: CGFloat(b.x), y: CGFloat(b.y))), c = view(CGPoint(x: CGFloat(b.z), y: CGFloat(b.w)))
+        let a = view(CGPoint(x: CGFloat(b.x), y: CGFloat(b.y)))
+        let c = view(CGPoint(x: CGFloat(b.z), y: CGFloat(b.w)))
         let r = CGRect(x: min(a.x, c.x), y: min(a.y, c.y), width: abs(c.x - a.x), height: abs(c.y - a.y))
         let side: CGFloat = 10
         for x in [r.minX, r.midX, r.maxX] {
             for y in [r.minY, r.midY, r.maxY] where !(x == r.midX && y == r.midY) {
                 let handle = NSBezierPath(rect: CGRect(x: x - side / 2, y: y - side / 2, width: side, height: side))
-                NSColor.white.setFill(); handle.fill()
-                HelpColours.ink.setStroke(); handle.lineWidth = 1.5; handle.stroke()
+                NSColor.white.setFill()
+                handle.fill()
+                HelpColours.ink.setStroke()
+                handle.lineWidth = 1.5
+                handle.stroke()
             }
         }
     }
@@ -220,8 +237,9 @@ final class FrameView: NSView {
             if let flash = scene.flash { drawFlash(flash) }
             if let menu = scene.menu { drawMenu(menu) }
             let hintSize = textSize(scene.hint, 30)
-            pill(scene.hint, x: origin.x + (size.width - hintSize.width) / 2 - 16 * unit,
-                 midY: origin.y + size.height - 50 * unit, size: 30)
+            pill(
+                scene.hint, x: origin.x + (size.width - hintSize.width) / 2 - 16 * unit,
+                midY: origin.y + size.height - 50 * unit, size: 30)
         }
     }
 
@@ -229,38 +247,55 @@ final class FrameView: NSView {
         let pts = hand.points.map(view)
         let skeleton = NSBezierPath()
         for (a, b) in bones {
-            skeleton.move(to: pts[a]); skeleton.line(to: pts[b])
+            skeleton.move(to: pts[a])
+            skeleton.line(to: pts[b])
         }
-        hand.colour.setStroke(); skeleton.lineWidth = 3 * unit; skeleton.stroke()
+        hand.colour.setStroke()
+        skeleton.lineWidth = 3 * unit
+        skeleton.stroke()
         for p in pts {
             let r = 5 * unit
             let dot = NSBezierPath(ovalIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
-            NSColor.white.setFill(); dot.fill()
-            hand.colour.setStroke(); dot.lineWidth = 1.5 * unit; dot.stroke()
+            NSColor.white.setFill()
+            dot.fill()
+            hand.colour.setStroke()
+            dot.lineWidth = 1.5 * unit
+            dot.stroke()
         }
 
         let progress = CGFloat(Pinch.progress(hand.gapCm))
         let gaugeColour = hand.pinched ? HelpColours.green : HelpColours.grey.blended(withFraction: progress, of: hand.colour)!
         let (thumb, index) = (pts[4], pts[8])
         let gap = NSBezierPath()
-        gap.move(to: thumb); gap.line(to: index)
-        gaugeColour.setStroke(); gap.lineWidth = (3 + 4 * progress) * unit; gap.stroke()
+        gap.move(to: thumb)
+        gap.line(to: index)
+        gaugeColour.setStroke()
+        gap.lineWidth = (3 + 4 * progress) * unit
+        gap.stroke()
         let centre = CGPoint(x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2)
         let r = 24 * unit
         let ring = NSBezierPath(ovalIn: CGRect(x: centre.x - r, y: centre.y - r, width: 2 * r, height: 2 * r))
-        HelpColours.grey.setStroke(); ring.lineWidth = 3 * unit; ring.stroke()
+        HelpColours.grey.setStroke()
+        ring.lineWidth = 3 * unit
+        ring.stroke()
         if hand.pinched {
-            HelpColours.green.setFill(); ring.fill()
+            HelpColours.green.setFill()
+            ring.fill()
         } else if progress > 0 {
             let arc = NSBezierPath()
             arc.appendArc(withCenter: centre, radius: r, startAngle: -90, endAngle: -90 + 360 * progress)
-            gaugeColour.setStroke(); arc.lineWidth = 6 * unit; arc.stroke()
+            gaugeColour.setStroke()
+            arc.lineWidth = 6 * unit
+            arc.stroke()
         }
-        let text = hand.pinched ? hand.pinchedText
+        let text =
+            hand.pinched
+            ? hand.pinchedText
             : String(format: "%@: pinch %.1f cm more", hand.action, max(hand.gapCm - Pinch.onCm, 0))
         if !text.isEmpty {
-            pill(text, x: centre.x + r + 14 * unit, midY: centre.y, size: 26,
-                 colour: hand.pinched ? HelpColours.green : .white)
+            pill(
+                text, x: centre.x + r + 14 * unit, midY: centre.y, size: 26,
+                colour: hand.pinched ? HelpColours.green : .white)
         }
     }
 
@@ -270,10 +305,13 @@ final class FrameView: NSView {
         let c = view(flash.at)
         let r = (28 + 110 * CGFloat(age / flashSeconds)) * unit
         let ring = NSBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
-        HelpColours.green.setStroke(); ring.lineWidth = 4 * unit; ring.stroke()
+        HelpColours.green.setStroke()
+        ring.lineWidth = 4 * unit
+        ring.stroke()
         let w = textSize(flash.text, 44).width
-        pill(flash.text, x: c.x - w / 2 - 24 * unit, midY: c.y - 70 * unit, size: 44, colour: HelpColours.ink,
-             background: HelpColours.green.withAlphaComponent(0.92))
+        pill(
+            flash.text, x: c.x - w / 2 - 24 * unit, midY: c.y - 70 * unit, size: 44, colour: HelpColours.ink,
+            background: HelpColours.green.withAlphaComponent(0.92))
     }
 
     /// The effect list beside the pinch: it stays put, and the highlight follows the hand.
@@ -289,27 +327,34 @@ final class FrameView: NSView {
         let half = step / 2
         let top = rows.first! - half - pad / 2
         HelpColours.panel.setFill()
-        NSBezierPath(roundedRect: CGRect(x: left, y: top, width: boxW, height: rows.last! + half + pad / 2 - top),
-                     xRadius: 22 * unit, yRadius: 22 * unit).fill()
+        NSBezierPath(
+            roundedRect: CGRect(x: left, y: top, width: boxW, height: rows.last! + half + pad / 2 - top),
+            xRadius: 22 * unit, yRadius: 22 * unit
+        ).fill()
         let inset = 6 * unit
         for (i, (name, row)) in zip(menu.names, rows).enumerated() {
             if i == menu.selected {
                 let h = 2 * half - inset
                 HelpColours.green.withAlphaComponent(0.95).setFill()
-                NSBezierPath(roundedRect: CGRect(x: left + inset, y: row - h / 2, width: boxW - 2 * inset, height: h),
-                             xRadius: h / 2, yRadius: h / 2).fill()
+                NSBezierPath(
+                    roundedRect: CGRect(x: left + inset, y: row - h / 2, width: boxW - 2 * inset, height: h),
+                    xRadius: h / 2, yRadius: h / 2
+                ).fill()
             }
             let th = textSize(name, fontSize).height
-            text(name, at: CGPoint(x: left + pad, y: row - th / 2), size: fontSize,
-                 colour: i == menu.selected ? HelpColours.ink : .white)
+            text(
+                name, at: CGPoint(x: left + pad, y: row - th / 2), size: fontSize,
+                colour: i == menu.selected ? HelpColours.ink : .white)
         }
     }
 
     // MARK: Text
 
     private func attributes(_ size: CGFloat, _ colour: NSColor) -> [NSAttributedString.Key: Any] {
-        [.font: NSFont(name: "Marker Felt Wide", size: size * unit) ?? .boldSystemFont(ofSize: size * unit),
-         .foregroundColor: colour]
+        [
+            .font: NSFont(name: "Marker Felt Wide", size: size * unit) ?? .boldSystemFont(ofSize: size * unit),
+            .foregroundColor: colour,
+        ]
     }
 
     private func textSize(_ s: String, _ size: CGFloat) -> CGSize {
@@ -321,8 +366,10 @@ final class FrameView: NSView {
     }
 
     /// Text in a rounded pill; `x` is its left edge and `midY` its vertical middle.
-    private func pill(_ s: String, x: CGFloat, midY: CGFloat, size: CGFloat, colour: NSColor = .white,
-                      background: NSColor = HelpColours.panel) {
+    private func pill(
+        _ s: String, x: CGFloat, midY: CGFloat, size: CGFloat, colour: NSColor = .white,
+        background: NSColor = HelpColours.panel
+    ) {
         guard !s.isEmpty else { return }
         let t = textSize(s, size)
         let (padX, padY) = (size * 0.55 * unit, size * 0.25 * unit)

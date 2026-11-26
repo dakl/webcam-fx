@@ -54,8 +54,9 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
 
     init(localizedName: String) {
         var format: CMFormatDescription?
-        CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: kCVPixelFormatType_32BGRA,
-                                       width: frameWidth, height: frameHeight, extensions: nil, formatDescriptionOut: &format)
+        CMVideoFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault, codecType: kCVPixelFormatType_32BGRA,
+            width: frameWidth, height: frameHeight, extensions: nil, formatDescriptionOut: &format)
         self.format = format!
         var pool: CVPixelBufferPool?
         let attributes: [CFString: Any] = [
@@ -66,15 +67,19 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         self.pool = pool!
         super.init()
 
-        device = CMIOExtensionDevice(localizedName: localizedName,
-                                     deviceID: UUID(uuidString: "6E1C0F3A-2B8D-4C51-9A7E-48D2F0B1C3A5")!,
-                                     legacyDeviceID: nil, source: self)
-        let streamFormat = CMIOExtensionStreamFormat(formatDescription: self.format, maxFrameDuration: frameDuration,
-                                                     minFrameDuration: frameDuration, validFrameDurations: nil)
-        source = StreamSource(name: "HandFX.Video", id: UUID(uuidString: "9B4E7D21-5C3F-4A86-B0D1-2E7F6A9C8B34")!,
-                              direction: .source, format: streamFormat, device: self)
-        sink = StreamSource(name: "HandFX.Sink", id: UUID(uuidString: "1F8A3C6E-7D25-4B9F-8E40-C5A1B2D3E4F6")!,
-                            direction: .sink, format: streamFormat, device: self)
+        device = CMIOExtensionDevice(
+            localizedName: localizedName,
+            deviceID: UUID(uuidString: "6E1C0F3A-2B8D-4C51-9A7E-48D2F0B1C3A5")!,
+            legacyDeviceID: nil, source: self)
+        let streamFormat = CMIOExtensionStreamFormat(
+            formatDescription: self.format, maxFrameDuration: frameDuration,
+            minFrameDuration: frameDuration, validFrameDurations: nil)
+        source = StreamSource(
+            name: "HandFX.Video", id: UUID(uuidString: "9B4E7D21-5C3F-4A86-B0D1-2E7F6A9C8B34")!,
+            direction: .source, format: streamFormat, device: self)
+        sink = StreamSource(
+            name: "HandFX.Sink", id: UUID(uuidString: "1F8A3C6E-7D25-4B9F-8E40-C5A1B2D3E4F6")!,
+            direction: .sink, format: streamFormat, device: self)
         do {
             try device.addStream(source.stream)
             try device.addStream(sink.stream)
@@ -124,12 +129,14 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         CVPixelBufferLockBaseAddress(buffer, [])
         memset(CVPixelBufferGetBaseAddress(buffer), 0x40, CVPixelBufferGetDataSize(buffer))  // dark grey
         CVPixelBufferUnlockBaseAddress(buffer, [])
-        var timing = CMSampleTimingInfo(duration: frameDuration, presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
-                                        decodeTimeStamp: .invalid)
+        var timing = CMSampleTimingInfo(
+            duration: frameDuration, presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
+            decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
-        CMSampleBufferCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, dataReady: true,
-                                           makeDataReadyCallback: nil, refcon: nil, formatDescription: format,
-                                           sampleTiming: &timing, sampleBufferOut: &sample)
+        CMSampleBufferCreateForImageBuffer(
+            allocator: kCFAllocatorDefault, imageBuffer: buffer, dataReady: true,
+            makeDataReadyCallback: nil, refcon: nil, formatDescription: format,
+            sampleTiming: &timing, sampleBufferOut: &sample)
         if let sample { source.stream.send(sample, discontinuity: [], hostTimeInNanoseconds: now) }
     }
 
@@ -175,8 +182,10 @@ final class StreamSource: NSObject, CMIOExtensionStreamSource {
     private let direction: CMIOExtensionStream.Direction
     private unowned let device: DeviceSource
 
-    init(name: String, id: UUID, direction: CMIOExtensionStream.Direction, format: CMIOExtensionStreamFormat,
-         device: DeviceSource) {
+    init(
+        name: String, id: UUID, direction: CMIOExtensionStream.Direction, format: CMIOExtensionStreamFormat,
+        device: DeviceSource
+    ) {
         self.format = format
         self.direction = direction
         self.device = device
@@ -187,9 +196,12 @@ final class StreamSource: NSObject, CMIOExtensionStreamSource {
     var formats: [CMIOExtensionStreamFormat] { [format] }
 
     var availableProperties: Set<CMIOExtensionProperty> {
-        direction == .source ? [.streamActiveFormatIndex, .streamFrameDuration]
-            : [.streamActiveFormatIndex, .streamFrameDuration, .streamSinkBufferQueueSize,
-               .streamSinkBuffersRequiredForStartup, .streamSinkBufferUnderrunCount, .streamSinkEndOfData]
+        direction == .source
+            ? [.streamActiveFormatIndex, .streamFrameDuration]
+            : [
+                .streamActiveFormatIndex, .streamFrameDuration, .streamSinkBufferQueueSize,
+                .streamSinkBuffersRequiredForStartup, .streamSinkBufferUnderrunCount, .streamSinkEndOfData,
+            ]
     }
 
     func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {

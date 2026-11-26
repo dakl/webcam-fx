@@ -19,9 +19,10 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import pyvirtualcam
+from mediapipe.tasks.python import BaseOptions, vision
+
 from camera import DEFAULT_CAMERA, open_camera
 from gestures import INDEX_TIP, MENU_STEP, THUMB_TIP, PinchMenu, PinchState, pinch_gap_cm
-from mediapipe.tasks.python import BaseOptions, vision
 from overlay import Flash, HandDrawing, draw_flash, draw_hand, draw_hint, draw_menu, draw_status, hint_for
 
 MIN_SIDE_PX = 40
@@ -58,8 +59,9 @@ def ascii_(c, cell=8, chars=" .:-=+*#%@"):
 
 def comic(c):
     smooth = cv2.bilateralFilter(posterize(c, 4), 7, 60, 60)
-    lines = cv2.adaptiveThreshold(cv2.medianBlur(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY), 5), 255,
-                                  cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 4)
+    lines = cv2.adaptiveThreshold(
+        cv2.medianBlur(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY), 5), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 4
+    )
     return cv2.bitwise_and(smooth, smooth, mask=lines)
 
 
@@ -133,9 +135,18 @@ def kaleidoscope(c, tiles_across=4, turns_per_second=0.03):
 
 
 FX = [
-    ("pixelate", pixelate), ("thermal", thermal), ("edges", edges), ("ascii", ascii_),
-    ("comic", comic), ("invert", invert), ("rgb split", rgb_split), ("blur", blur),
-    ("night vision", night_vision), ("sepia", sepia), ("posterize", posterize), ("kaleidoscope", kaleidoscope),
+    ("pixelate", pixelate),
+    ("thermal", thermal),
+    ("edges", edges),
+    ("ascii", ascii_),
+    ("comic", comic),
+    ("invert", invert),
+    ("rgb split", rgb_split),
+    ("blur", blur),
+    ("night vision", night_vision),
+    ("sepia", sepia),
+    ("posterize", posterize),
+    ("kaleidoscope", kaleidoscope),
 ]
 
 
@@ -153,7 +164,7 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: st
     if cam:
         print(f"Sending to {cam.device}")
 
-    log = open(log_path, "w", encoding="utf-8") if log_path else None
+    log = open(log_path, "w", encoding="utf-8") if log_path else None  # noqa: SIM115 - closed when main ends
     if log:
         log.write("t,side,side_score,gap_cm,triggered,hands\n")
     menu, box, black_outside, menu_at = PinchMenu(count=len(FX)), None, False, (0.0, 0.0)
@@ -190,7 +201,8 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: st
             pinch_x = (hand[THUMB_TIP].x + hand[INDEX_TIP].x) / 2
             pinch_y = (hand[THUMB_TIP].y + hand[INDEX_TIP].y) / 2
             if log:
-                log.write(f"{now - t0:.3f},{side},{handedness[0].score:.2f},{gap:.2f},{int(triggered)},{len(res.hand_landmarks)}\n")
+                score = handedness[0].score
+                log.write(f"{now - t0:.3f},{side},{score:.2f},{gap:.2f},{int(triggered)},{len(res.hand_landmarks)}\n")
             if is_effects:
                 event = menu.update(pinches[side].closed, pinch_y, now)
                 if menu.is_open:
@@ -200,15 +212,18 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: st
             elif triggered:
                 black_outside = not black_outside
                 flash = Flash(f"black {'on' if black_outside else 'off'}", (pinch_x * W, pinch_y * H), now)
-            drawings.append(HandDrawing(
-                points=np.array([(p.x * W, p.y * H) for p in hand]),
-                colour=EFFECTS_COLOUR if is_effects else BLACK_COLOUR,
-                action="next effect" if is_effects else "black outside",
-                gap_cm=gap,
-                pinched=pinches[side].closed,
-                pinched_text=("" if menu.is_open else "let go: next, hold: list")
-                if is_effects else "black outside - open to pinch again",
-            ))
+            drawings.append(
+                HandDrawing(
+                    points=np.array([(p.x * W, p.y * H) for p in hand]),
+                    colour=EFFECTS_COLOUR if is_effects else BLACK_COLOUR,
+                    action="next effect" if is_effects else "black outside",
+                    gap_cm=gap,
+                    pinched=pinches[side].closed,
+                    pinched_text=("" if menu.is_open else "let go: next, hold: list")
+                    if is_effects
+                    else "black outside - open to pinch again",
+                )
+            )
         for side in pinches.keys() - seen_sides:
             pinches[side].hand_lost()
 
@@ -241,7 +256,8 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: st
         frames += 1
         fps = 0.9 * fps + 0.1 * (1 / max(now - last_tick, 1e-6))
         last_tick = now
-        status = f"{fps:4.1f} fps  hands: {len(res.hand_landmarks)}  {FX[menu.selected][0]}{'  black' if black_outside else ''}"
+        black = "  black" if black_outside else ""
+        status = f"{fps:4.1f} fps  hands: {len(res.hand_landmarks)}  {FX[menu.selected][0]}{black}"
         if cam:
             frame = cv2.flip(frame, 1)  # your own window is mirrored, like a meeting app's preview
         if show_help:
@@ -249,10 +265,20 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: st
                 draw_hand(frame, drawing, mirror=bool(cam))
             draw_flash(frame, flash, mirror=bool(cam))
             if menu.is_open:
-                draw_menu(frame, [name for name, _ in FX], menu.selected, menu.start_index, menu_at,
-                          MENU_STEP * H, mirror=bool(cam))
-            hint = "Move the pinch down or up to pick, open your fingers to keep it" if menu.is_open \
+                draw_menu(
+                    frame,
+                    [name for name, _ in FX],
+                    menu.selected,
+                    menu.start_index,
+                    menu_at,
+                    MENU_STEP * H,
+                    mirror=bool(cam),
+                )
+            hint = (
+                "Move the pinch down or up to pick, open your fingers to keep it"
+                if menu.is_open
                 else hint_for(len(res.hand_landmarks), frame_ok)
+            )
             draw_hint(frame, hint)
         draw_status(frame, status)
 
@@ -270,7 +296,9 @@ def main(run_seconds: float | None, to_cam: bool, camera_name: str, log_path: st
             break
 
     elapsed = time.time() - t0
-    print(f"{frames} frames in {elapsed:.1f} s = {frames / elapsed:.1f} fps; two hands seen in {two_hand_frames} frames")
+    print(
+        f"{frames} frames in {elapsed:.1f} s = {frames / elapsed:.1f} fps; two hands seen in {two_hand_frames} frames"
+    )
     cap.release()
     if log:
         log.close()

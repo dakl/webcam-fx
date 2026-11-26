@@ -42,8 +42,10 @@ final class VirtualCamera: NSObject, OSSystemExtensionRequestDelegate {
         OSSystemExtensionManager.shared.submitRequest(request)
     }
 
-    func request(_ request: OSSystemExtensionRequest, actionForReplacingExtension existing: OSSystemExtensionProperties,
-                 withExtension ext: OSSystemExtensionProperties) -> OSSystemExtensionRequest.ReplacementAction {
+    func request(
+        _ request: OSSystemExtensionRequest, actionForReplacingExtension existing: OSSystemExtensionProperties,
+        withExtension ext: OSSystemExtensionProperties
+    ) -> OSSystemExtensionRequest.ReplacementAction {
         .replace
     }
 
@@ -69,20 +71,25 @@ final class VirtualCamera: NSObject, OSSystemExtensionRequestDelegate {
         guard isInApp, let queue = connectedQueue() else { return }
         guard CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue), let buffer = pixelBuffer() else { return }
         let fill = max(Self.size.width / image.extent.width, Self.size.height / image.extent.height)
-        let scaled = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY)
-            .concatenating(CGAffineTransform(scaleX: fill, y: fill)))
-        context.render(scaled, to: buffer, bounds: CGRect(origin: .zero, size: Self.size),
-                       colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        let scaled = image.transformed(
+            by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY)
+                .concatenating(CGAffineTransform(scaleX: fill, y: fill)))
+        context.render(
+            scaled, to: buffer, bounds: CGRect(origin: .zero, size: Self.size),
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
         if format == nil {
-            CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer,
-                                                         formatDescriptionOut: &format)
+            CMVideoFormatDescriptionCreateForImageBuffer(
+                allocator: kCFAllocatorDefault, imageBuffer: buffer,
+                formatDescriptionOut: &format)
         }
-        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30),
-                                        presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), decodeTimeStamp: .invalid)
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: 30),
+            presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
-        CMSampleBufferCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, dataReady: true,
-                                           makeDataReadyCallback: nil, refcon: nil, formatDescription: format!,
-                                           sampleTiming: &timing, sampleBufferOut: &sample)
+        CMSampleBufferCreateForImageBuffer(
+            allocator: kCFAllocatorDefault, imageBuffer: buffer, dataReady: true,
+            makeDataReadyCallback: nil, refcon: nil, formatDescription: format!,
+            sampleTiming: &timing, sampleBufferOut: &sample)
         if let sample {
             CMSimpleQueueEnqueue(queue, element: Unmanaged.passRetained(sample).toOpaque())
         }
@@ -109,7 +116,8 @@ final class VirtualCamera: NSObject, OSSystemExtensionRequestDelegate {
         guard now - lastLookup > 1 else { return nil }
         lastLookup = now
         guard let device = devices().first(where: { name(of: $0) == Self.cameraName }),
-              let sink = streams(of: device).first(where: { direction(of: $0) == 0 }) else { return nil }  // 0: into the device; 1 is what cameras output
+            let sink = streams(of: device).first(where: { direction(of: $0) == 0 })
+        else { return nil }  // 0: into the device; 1 is what cameras output
         var unmanaged: Unmanaged<CMSimpleQueue>?
         let copied = CMIOStreamCopyBufferQueue(sink, { _, _, _ in }, nil, &unmanaged)
         guard copied == 0, let q = unmanaged?.takeRetainedValue() else {
@@ -126,9 +134,10 @@ final class VirtualCamera: NSObject, OSSystemExtensionRequestDelegate {
     // MARK: CoreMediaIO lookups
 
     private func address(_ selector: Int) -> CMIOObjectPropertyAddress {
-        CMIOObjectPropertyAddress(mSelector: CMIOObjectPropertySelector(selector),
-                                  mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
-                                  mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain))
+        CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(selector),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain))
     }
 
     private func ids(_ object: CMIOObjectID, _ selector: Int) -> [CMIOObjectID] {

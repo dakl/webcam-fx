@@ -113,8 +113,9 @@ def draw_panel(img, x: int, y: int, w: int, h: int, colour=PANEL, opacity=PANEL_
     _blend(img, x, y, np.broadcast_to(np.array(colour, np.float32), (h, w, 3)), alpha)
 
 
-def draw_pill(img, text: str, x: int, y: int, size_at_1080: float, colour=WHITE, background=PANEL,
-              opacity=PANEL_OPACITY) -> tuple[int, int]:
+def draw_pill(
+    img, text: str, x: int, y: int, size_at_1080: float, colour=WHITE, background=PANEL, opacity=PANEL_OPACITY
+) -> tuple[int, int]:
     """Text in a rounded pill; (x, y) is the pill's left edge and vertical middle. Returns its size."""
     tw, th = text_size(img, text, size_at_1080)
     pad_x, pad_y = _px(img, size_at_1080 * 0.55), _px(img, size_at_1080 * 0.3)
@@ -153,8 +154,7 @@ def draw_hand(img, hand: HandDrawing, mirror: bool) -> None:
         to_go = max(hand.gap_cm - PINCH_ON_CM, 0)
         text = f"{hand.action}: pinch {to_go:.1f} cm more"
     if text:
-        draw_pill(img, text, centre[0] + r + _px(img, 14), centre[1], 26,
-                  colour=GREEN if hand.pinched else WHITE)
+        draw_pill(img, text, centre[0] + r + _px(img, 14), centre[1], 26, colour=GREEN if hand.pinched else WHITE)
 
 
 def draw_flash(img, flash: Flash | None, mirror: bool) -> None:
@@ -167,8 +167,9 @@ def draw_flash(img, flash: Flash | None, mirror: bool) -> None:
     centre = _to_view(*flash.at, img.shape[1], mirror)
     cv2.circle(img, centre, int(_px(img, 28) + _px(img, 110) * age / FLASH_S), GREEN, _px(img, 4), cv2.LINE_AA)
     w, _ = text_size(img, flash.text, 44)
-    draw_pill(img, flash.text, centre[0] - w // 2, centre[1] - _px(img, 70), 44, colour=INK, background=GREEN,
-              opacity=0.92)
+    draw_pill(
+        img, flash.text, centre[0] - w // 2, centre[1] - _px(img, 70), 44, colour=INK, background=GREEN, opacity=0.92
+    )
 
 
 def draw_hint(img, text: str) -> None:
@@ -193,8 +194,9 @@ def hint_for(hands_seen: int, frame_ok: bool) -> str:
     return "Right pinch: next effect (hold: list)  ·  Left pinch: black outside  ·  h hides help"
 
 
-def draw_menu(img, names: list[str], selected: int, anchor: int, at: tuple[float, float], step_px: float,
-              mirror: bool) -> None:
+def draw_menu(
+    img, names: list[str], selected: int, anchor: int, at: tuple[float, float], step_px: float, mirror: bool
+) -> None:
     """The effect list beside the pinch: it stays put, and the highlight follows the hand.
 
     Item `anchor` sits level with `at`, where the hold started; the others are
@@ -216,6 +218,13 @@ def draw_menu(img, names: list[str], selected: int, anchor: int, at: tuple[float
     for i, (name, row) in enumerate(zip(names, rows)):
         tw, th = text_size(img, name, size)
         if i == selected:
-            draw_panel(img, left + inset, row - half + inset // 2, box_w - 2 * inset, 2 * half - inset,
-                       colour=GREEN, opacity=0.95)
+            draw_panel(
+                img,
+                left + inset,
+                row - half + inset // 2,
+                box_w - 2 * inset,
+                2 * half - inset,
+                colour=GREEN,
+                opacity=0.95,
+            )
         draw_text(img, name, left + pad, row - th // 2, size, INK if i == selected else WHITE)

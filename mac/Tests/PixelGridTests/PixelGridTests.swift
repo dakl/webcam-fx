@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import PixelGrid
 
 final class PixelGridTests: XCTestCase {
@@ -23,16 +24,20 @@ final class PixelGridTests: XCTestCase {
     }
 
     func testLoneBlockTakesItsNeighboursColour() {
-        let grid = [0, 0, 0,
-                    0, 1, 0,
-                    0, 0, 0]
+        let grid = [
+            0, 0, 0,
+            0, 1, 0,
+            0, 0, 0,
+        ]
         XCTAssertEqual(despeckle(grid, cols: 3, rows: 3), Array(repeating: 0, count: 9))
     }
 
     func testBlockWithAMatchingNeighbourStays() {
-        let grid = [0, 0, 0,
-                    0, 1, 1,
-                    0, 0, 0]
+        let grid = [
+            0, 0, 0,
+            0, 1, 1,
+            0, 0, 0,
+        ]
         XCTAssertEqual(despeckle(grid, cols: 3, rows: 3), grid)
     }
 
