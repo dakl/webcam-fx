@@ -137,9 +137,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         }
     }
 
-    /// The settings as of the last change, for the menus. They read this copy and never wait for
+    /// The settings as of the last change, for the toolbar. It reads this copy and never waits for
     /// the camera queue, which can be busy for a while with a slow effect.
-    struct Controls { var selected = 0, blackOutside = false, gesturesOn = true, hasMouseBox = false }
+    struct Controls { var selected = 0, blackOutside = false, gesturesOn = true, showHelp = true }
     var controls: Controls { controlsLock.withLock { published } }
     private var published = Controls()
     private let controlsLock = NSLock()
@@ -147,7 +147,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     /// Call on the camera queue after changing a setting.
     private func publishControls() {
         let c = Controls(selected: menu.selected, blackOutside: blackOutside, gesturesOn: gesturesOn,
-                         hasMouseBox: mouseBox != nil)
+                         showHelp: showHelp)
         controlsLock.withLock { published = c }
     }
 
@@ -159,14 +159,29 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         }
     }
 
+    func setBlackOutside(_ on: Bool) { change { $0.blackOutside = on } }
+    func setShowHelp(_ on: Bool) { change { $0.showHelp = on } }
+    func setGestures(_ on: Bool) { change { $0.applyGestures(on) } }
+
+    private func change(_ apply: @escaping (Camera) -> Void) {
+        queue.async { [self] in
+            apply(self)
+            publishControls()
+        }
+    }
+
+    /// Off: hands are not tracked, and pinches, the hands' frame and the list are dropped.
+    private func applyGestures(_ on: Bool) {
+        gesturesOn = on
+        if !on { (pinches, smoothers, frame, flash) = ([:], [:], FingerFrame(), nil) }
+    }
+
     func key(_ key: String) {
         queue.async { [self] in
             switch key {
             case "n": menu.selected = (menu.selected + 1) % menu.count
             case "b": blackOutside.toggle()
-            case "g":
-                gesturesOn.toggle()
-                if !gesturesOn { (pinches, smoothers, frame, flash) = ([:], [:], FingerFrame(), nil) }
+            case "g": applyGestures(!gesturesOn)
             case "h": showHelp.toggle()
             case "s": save()
             case "q": DispatchQueue.main.async { NSApp.terminate(nil) }
@@ -219,12 +234,10 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                                   at: menuAt, stepPx: CGFloat(PinchMenu.step) * CGFloat(height))
             scene.hint = "Move the pinch down or up to pick, open your fingers to keep it"
         } else {
-            scene.hint = gesturesOn ? hint(handsSeen: hands.count, frameOK: box != nil)
-                : "Hand gestures off · drag to draw a frame, right-click for effects, g turns gestures on"
+            scene.hint = gesturesOn ? hint(handsSeen: hands.count, frameOK: box != nil) : ""
         }
-        scene.status = String(format: "%.0f fps · %@ · %@%@ · camera: %@", fps,
-                              gesturesOn ? "hands: \(hands.count)" : "gestures off", effect.name,
-                              blackOutside ? " · black" : "", virtualCamera.status)
+        scene.status = String(format: "%.0f fps · %@ · camera: %@", fps,
+                              gesturesOn ? "hands: \(hands.count)" : "gestures off", virtualCamera.status)
         DispatchQueue.main.async { [view] in
             view.scene = scene
             view.needsDisplay = true
@@ -276,7 +289,6 @@ let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
                       styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
 window.title = "HandFX"
 let frameView = FrameView()
-window.contentView = frameView
 window.center()
 window.makeKeyAndOrderFront(nil)
 window.makeFirstResponder(frameView)
@@ -298,59 +310,36 @@ do {
 frameView.onKey = { camera.key($0) }
 frameView.onDrawBox = { camera.setMouseBox($0) }
 
-/// Pick an effect with the mouse: the Effects menu in the menu bar, or a right-click in the window.
-final class EffectMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
-    let menu = NSMenu(title: "Effects")
-
-    override init() {
-        super.init()
-        menu.delegate = self
-        for (i, effect) in effects.all.enumerated() {
-            let item = NSMenuItem(title: effect.name, action: #selector(pick(_:)), keyEquivalent: "")
-            item.tag = i
-            item.target = self
-            menu.addItem(item)
-        }
-        menu.addItem(.separator())
-        for (title, action) in [("Black outside", #selector(toggleBlack)), ("Hand gestures", #selector(toggleGestures)),
-                                ("Remove drawn frame", #selector(removeFrame))] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-        }
-    }
-
-    @objc func pick(_ item: NSMenuItem) { camera.select(item.tag) }
-    @objc func toggleBlack() { camera.key("b") }
-    @objc func toggleGestures() { camera.key("g") }
-    @objc func removeFrame() { camera.setMouseBox(nil) }
-
-    func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        item.action != #selector(removeFrame) || camera.controls.hasMouseBox
-    }
-
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        let c = camera.controls
-        let selected = c.selected
-        for item in menu.items where item.action == #selector(pick(_:)) { item.state = item.tag == selected ? .on : .off }
-        menu.item(withTitle: "Black outside")?.state = c.blackOutside ? .on : .off
-        menu.item(withTitle: "Hand gestures")?.state = c.gesturesOn ? .on : .off
-    }
+let toolbar = Toolbar(camera: camera, frameView: frameView)
+let content = NSView()
+for v in [frameView, toolbar] as [NSView] {
+    v.translatesAutoresizingMaskIntoConstraints = false
+    content.addSubview(v)
 }
+NSLayoutConstraint.activate([
+    frameView.topAnchor.constraint(equalTo: content.topAnchor),
+    frameView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+    frameView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+    toolbar.topAnchor.constraint(equalTo: frameView.bottomAnchor),
+    toolbar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+    toolbar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+    toolbar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+])
+window.contentView = content
+window.makeFirstResponder(frameView)
 
-let effectMenu = EffectMenu()
-frameView.menu = effectMenu.menu  // right-click
 let mainMenu = NSMenu()
 let appItem = NSMenuItem()
 appItem.submenu = NSMenu()
 appItem.submenu!.addItem(withTitle: "Quit HandFX", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-let effectsItem = NSMenuItem()
-effectsItem.submenu = effectMenu.menu
-mainMenu.items = [appItem, effectsItem]
+mainMenu.items = [appItem]
 app.mainMenu = mainMenu
 virtualCamera.install()
 // The flash and list animate between frames too.
-Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { _ in frameView.needsDisplay = true }
+Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { _ in
+    frameView.needsDisplay = true
+    toolbar.refresh()
+}
 AVCaptureDevice.requestAccess(for: .video) { ok in
     guard ok else { return print("Camera access denied. Allow it in System Settings > Privacy & Security > Camera.") }
     camera.session.startRunning()

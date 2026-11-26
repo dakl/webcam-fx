@@ -72,9 +72,11 @@ General > Login Items & Extensions > Camera Extensions, and allow camera
 access. Then pick the "HandFX" camera in your meeting app; it shows grey while
 HandFX.app is closed.
 
-With the mouse: drag in the window to draw a frame (a click removes it), and
-use the Effects menu or a right-click to pick an effect, turn black-outside on
-or off, or switch hand gestures off so your hands change nothing.
+With the mouse: drag in the picture to draw a frame; drag its edges or corners
+to resize it, inside it to move it, and click outside it to remove it. The
+toolbar under the picture picks the effect, turns black-outside, hand gestures
+and the help on or off, locks the frame against the mouse, and shows fps,
+hands and the camera state.
 
 - Keys: `n` next effect, `b` black outside, `g` hand gestures on or off,
   `h` help, `s` save the camera picture to `mac/captures/`, `q` quit.

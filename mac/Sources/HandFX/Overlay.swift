@@ -32,7 +32,7 @@ struct Scene {
     var flash: FlashHelp?
     var menu: MenuHelp?
     var hint = ""
-    var status = ""
+    var status = ""  // shown in the toolbar
     var showHelp = true
 }
 
@@ -58,30 +58,114 @@ final class FrameView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    /// Called while you drag a frame with the mouse (image pixels), and with nil on a plain click.
+    /// Told each change of the frame drawn with the mouse (image pixels; nil: none).
     var onDrawBox: ((SIMD4<Float>?) -> Void)?
-    private var dragStart: CGPoint?
+
+    /// The frame drawn with the mouse, in image pixels: xmin, ymin, xmax, ymax.
+    var drawnBox: SIMD4<Float>? {
+        didSet { onDrawBox?(drawnBox) }
+    }
+
+    /// Locked: the mouse cannot draw, move, resize or remove the frame, and the handles are hidden.
+    var frameLocked = false
+
+    /// What a mouse drag does: draw a new frame, move the frame, or move some of its edges.
+    private enum Drag {
+        case draw(from: CGPoint)
+        case move(from: CGPoint, box: SIMD4<Float>)
+        case resize(from: CGPoint, box: SIMD4<Float>, left: Bool, right: Bool, top: Bool, bottom: Bool)
+    }
+    private var drag: Drag?
+    private var dragged = false
+    private static let grab: CGFloat = 10  // view points from an edge that still grab it
 
     /// A view point's place in the picture: the inverse of `view(_:)`.
     private func picture(_ p: CGPoint) -> CGPoint {
         CGPoint(x: (origin.x + size.width - p.x) / scale, y: (p.y - origin.y) / scale)
     }
 
+    private func mousePoint(_ event: NSEvent) -> CGPoint { picture(convert(event.locationInWindow, from: nil)) }
+
+    /// What a press at picture point `p` would do: near an edge resizes, inside moves, outside draws.
+    private func drag(at p: CGPoint) -> Drag {
+        guard let b = drawnBox else { return .draw(from: p) }
+        let reach = Float(Self.grab / max(scale, 0.01)), x = Float(p.x), y = Float(p.y)
+        let alongX = x > b.x - reach && x < b.z + reach, alongY = y > b.y - reach && y < b.w + reach
+        let left = alongY && abs(x - b.x) < reach, right = alongY && abs(x - b.z) < reach
+        let top = alongX && abs(y - b.y) < reach, bottom = alongX && abs(y - b.w) < reach
+        if left || right || top || bottom {
+            return .resize(from: p, box: b, left: left, right: right, top: top, bottom: bottom)
+        }
+        if x > b.x, x < b.z, y > b.y, y < b.w { return .move(from: p, box: b) }
+        return .draw(from: p)
+    }
+
     override func mouseDown(with event: NSEvent) {
-        dragStart = convert(event.locationInWindow, from: nil)
+        drag = frameLocked ? nil : drag(at: mousePoint(event))
+        dragged = false
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let start = dragStart else { return }
-        let a = picture(start), b = picture(convert(event.locationInWindow, from: nil))
-        onDrawBox?(SIMD4(Float(min(a.x, b.x)), Float(min(a.y, b.y)), Float(max(a.x, b.x)), Float(max(a.y, b.y))))
+        guard let drag else { return }
+        dragged = true
+        let p = mousePoint(event)
+        switch drag {
+        case .draw(let from):
+            drawnBox = ordered(SIMD4(Float(from.x), Float(from.y), Float(p.x), Float(p.y)))
+        case .move(let from, let box):
+            let d = SIMD2(Float(p.x - from.x), Float(p.y - from.y))
+            drawnBox = box + SIMD4(d.x, d.y, d.x, d.y)
+        case .resize(let from, var box, let left, let right, let top, let bottom):
+            let dx = Float(p.x - from.x), dy = Float(p.y - from.y)
+            if left { box.x += dx }
+            if right { box.z += dx }
+            if top { box.y += dy }
+            if bottom { box.w += dy }
+            drawnBox = ordered(box)
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { dragStart = nil }
-        guard let start = dragStart else { return }
-        let end = convert(event.locationInWindow, from: nil)
-        if hypot(end.x - start.x, end.y - start.y) < 4 { onDrawBox?(nil) }  // a click removes the drawn frame
+        defer { drag = nil }
+        guard drag != nil else { return }
+        if !dragged, case .draw = drag { drawnBox = nil }  // a click outside the frame removes it
+    }
+
+    private func ordered(_ b: SIMD4<Float>) -> SIMD4<Float> {
+        SIMD4(min(b.x, b.z), min(b.y, b.w), max(b.x, b.z), max(b.y, b.w))
+    }
+
+    // The cursor shows what a press would do.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard !frameLocked else { return NSCursor.arrow.set() }
+        switch drag(at: mousePoint(event)) {
+        case .draw: NSCursor.crosshair.set()
+        case .move: NSCursor.openHand.set()
+        case .resize(_, _, let l, let r, let t, let b):
+            ((l || r) && !(t || b) ? NSCursor.resizeLeftRight : (t || b) && !(l || r) ? NSCursor.resizeUpDown
+                : NSCursor.crosshair).set()
+        }
+    }
+
+    /// Square handles on the corners and edge middles of the drawn frame.
+    private func drawHandles(_ b: SIMD4<Float>) {
+        let a = view(CGPoint(x: CGFloat(b.x), y: CGFloat(b.y))), c = view(CGPoint(x: CGFloat(b.z), y: CGFloat(b.w)))
+        let r = CGRect(x: min(a.x, c.x), y: min(a.y, c.y), width: abs(c.x - a.x), height: abs(c.y - a.y))
+        let side: CGFloat = 10
+        for x in [r.minX, r.midX, r.maxX] {
+            for y in [r.minY, r.midY, r.maxY] where !(x == r.midX && y == r.midY) {
+                let handle = NSBezierPath(rect: CGRect(x: x - side / 2, y: y - side / 2, width: side, height: side))
+                NSColor.white.setFill(); handle.fill()
+                Palette.ink.setStroke(); handle.lineWidth = 1.5; handle.stroke()
+            }
+        }
     }
 
     override func keyDown(with event: NSEvent) {
@@ -113,6 +197,7 @@ final class FrameView: NSView {
         ctx.draw(image, in: CGRect(origin: .zero, size: size))
         ctx.restoreGState()
 
+        if let box = drawnBox, !frameLocked { drawHandles(box) }
         if scene.showHelp {
             scene.hands.forEach(drawHand)
             if let flash = scene.flash { drawFlash(flash) }
@@ -121,7 +206,6 @@ final class FrameView: NSView {
             pill(scene.hint, x: origin.x + (size.width - hintSize.width) / 2 - 16 * unit,
                  midY: origin.y + size.height - 50 * unit, size: 30)
         }
-        pill(scene.status, x: origin.x + 16 * unit, midY: origin.y + 34 * unit, size: 24, colour: Palette.muted)
     }
 
     private func drawHand(_ hand: HandHelp) {
